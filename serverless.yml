@@ -15,10 +15,21 @@ provider:
     DB_NAME: ${env:DB_NAME, ssm:/cn-telemetry/${sls:stage}/db/name~true}
     DB_USER: ${env:DB_USER, ssm:/cn-telemetry/${sls:stage}/db/user~true}
     DB_PASSWORD: ${env:DB_PASSWORD, ssm:/cn-telemetry/${sls:stage}/db/password~true}
-    ENV: ${env:ENV, '${sls:stage}'}
+    ENV: ${sls:stage, env:ENV}
     LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
     CURATION_HTTP_SECRET: ${env:CURATION_HTTP_SECRET, ''}
     CURATION_BATCH_SIZE: ${env:CURATION_BATCH_SIZE, '500'}
+    ML_HTTP_SECRET: ${env:ML_HTTP_SECRET, ''}
+    ML_AUTO_INCIDENT_ENABLED: ${env:ML_AUTO_INCIDENT_ENABLED, 'false'}
+    ML_AUTO_INCIDENT_MIN_LEVEL: ${env:ML_AUTO_INCIDENT_MIN_LEVEL, 'Alto'}
+    ML_RISK_LOOKBACK_DAYS: ${env:ML_RISK_LOOKBACK_DAYS, '30'}
+    ML_MAX_SNAPSHOTS_PER_DEVICE: ${env:ML_MAX_SNAPSHOTS_PER_DEVICE, '5000'}
+    ML_MODEL_NAME: ${env:ML_MODEL_NAME, 'device_risk_if'}
+    ML_MODEL_VERSION: ${env:ML_MODEL_VERSION, '1'}
+    ML_HORIZON_MINUTES: ${env:ML_HORIZON_MINUTES, '60'}
+    ML_MIN_SNAPSHOTS: ${env:ML_MIN_SNAPSHOTS, '5'}
+    ML_RECENT_WINDOW: ${env:ML_RECENT_WINDOW, '50'}
+    ML_SKLEARN_N_JOBS: ${env:ML_SKLEARN_N_JOBS, '1'}
   iamRoleStatements:
     - Effect: Allow
       Action: [sqs:SendMessage]
@@ -31,7 +42,7 @@ provider:
       Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/cn-telemetry/*"
 plugins:
   # - serverless-python-requirements
-  - serverless-dotenv-plugin
+  # - serverless-dotenv-plugin
 custom:
   # isLocal: ${strEquals(${sls:stage}, 'local')}
   accountId: ${env:AWS_ACCOUNT_ID, '000000000000'}
@@ -43,10 +54,25 @@ custom:
     slim: true
     strip: true
     dockerizePip: true
+    # Docker chowns the download cache to root; a failed run leaves dirs root-owned and
+    # the next deploy fails opening downloadCacheslspyc/requirements.txt on the host.
+    useDownloadCache: false
 package:
   patterns:
+    - '!layers/**'
+    - '!scripts/**'
+    - '!env/**'
     - 'src/**'
     - 'requirements.txt'
+# ML wheels (numpy/scipy/pandas/sklearn) — build with: bash scripts/build_ml_scipy_layer.sh
+# Slimmed in that script to stay under the 250 MiB unzipped limit with the function package.
+layers:
+  mlDeps:
+    path: layers/ml-deps
+    name: ${self:service}-${sls:stage}-ml-deps
+    description: numpy scipy pandas scikit-learn for mlRiskJob
+    compatibleRuntimes:
+      - python3.13
 functions:
   httpIngest:
     handler: src/entrypoints/http/handlers.http_ingest
@@ -68,6 +94,16 @@ functions:
       - schedule: rate(10 minutes)
       - httpApi: { method: POST, path: /internal/curation/run }
       - httpApi: { method: GET, path: /internal/curation/run }
+  mlRiskJob:
+    handler: src/entrypoints/aws/ml_risk_handler.handle
+    timeout: 900
+    memorySize: 3008
+    layers:
+      - { Ref: MlDepsLambdaLayer }
+    events:
+      - schedule: rate(1 day)
+      - httpApi: { method: POST, path: /internal/ml-risk/run }
+      - httpApi: { method: GET, path: /internal/ml-risk/run }
 resources:
   Resources:
     TelemetryQueue:

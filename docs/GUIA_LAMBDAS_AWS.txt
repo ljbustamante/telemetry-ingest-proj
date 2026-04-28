@@ -1,0 +1,691 @@
+==============================================================================
+  GUIA PARA EL DESARROLLADOR BACKEND — LAMBDAS AWS — CNAgent Dashboard
+==============================================================================
+
+Hola. Este archivo te explica exactamente qué Lambdas debes crear en AWS
+para que el dashboard React funcione en producción.
+
+El frontend ya existe y está terminado. Solo necesita que los endpoints
+reales devuelvan el mismo formato JSON que el mock. No cambies ningún
+nombre de campo — el frontend depende de ellos exactamente como están.
+
+
+==============================================================================
+  RESUMEN DE APIS A CREAR (todas van detrás de API Gateway)
+==============================================================================
+
+  MÉTODO   RUTA                              LAMBDA
+  -------  --------------------------------  --------------------------------
+  POST     /auth/login                       auth/login.py
+  GET      /devices                          devices/list_devices.py
+  GET      /devices/{device_id}              devices/get_device.py
+  GET      /devices/{device_id}/metrics      metrics/device_metrics.py
+  GET      /dashboard/summary                metrics/dashboard_summary.py
+  GET      /alerts                           alerts/list_alerts.py
+  GET      /tickets                          alerts/tickets_crud.py
+  PATCH    /tickets/{ticket_id}/close        alerts/tickets_crud.py
+  DELETE   /tickets/{ticket_id}              alerts/tickets_crud.py
+  GET      /tickets/export                   alerts/export_tickets_csv.py
+
+
+==============================================================================
+  VARIABLES DE ENTORNO (configurar en cada Lambda en AWS Console)
+==============================================================================
+
+  DATABASE_URL  = postgresql://usuario:password@rds-endpoint.amazonaws.com:5432/cnagent
+  JWT_SECRET    = una-clave-secreta-de-minimo-32-caracteres
+  S3_BUCKET     = cnagent-ml-data
+  AUTO_TICKET_THRESHOLD = 0.72
+
+
+==============================================================================
+  DEPENDENCIAS PYTHON (Layer de Lambda o requirements.txt)
+==============================================================================
+
+  psycopg2-binary==2.9.9
+  boto3==1.34.0
+
+
+==============================================================================
+  IMPORTANTE — REGLAS DE NEGOCIO QUE DEBES RESPETAR
+==============================================================================
+
+  1. Los tickets (incidents) SOLO los crea la Lambda de scoring automaticamente.
+     El endpoint POST /tickets existe en el codigo pero en produccion deberia
+     estar restringido — solo la Lambda de scoring lo llama, nunca el usuario.
+
+  2. Un ticket cerrado (con outcome en ml_feedback) NO puede eliminarse.
+     La Lambda DELETE debe verificar que no exista registro en ml_feedback
+     antes de borrar. Si existe, retorna 409.
+
+  3. El CSV de exportacion (/tickets/export) solo incluye tickets cerrados
+     con outcome. Ese CSV es el Ground Truth para validate_model.py.
+
+  4. El campo "technician" en los tickets auto-generados debe ser "sistema".
+     Solo cuando un tecnico crea uno manual va su email.
+
+
+==============================================================================
+  TABLA DE LA BD QUE USA CADA LAMBDA
+==============================================================================
+
+  Lambda                  Tablas que toca
+  ----------------------  -------------------------------------------------------
+  login.py                users
+  list_devices.py         devices, customers, sites, readings_curated_parent,
+                          device_assignments
+  get_device.py           devices, customers, sites, readings_curated_parent,
+                          device_hardware_snapshot, device_storage_drive,
+                          ml_predictions
+  device_metrics.py       readings_curated_parent
+  dashboard_summary.py    devices, readings_curated_parent, ml_predictions
+  list_alerts.py          ml_predictions, devices, customers
+  tickets_crud.py         incidents, devices, customers, ml_feedback
+  export_tickets_csv.py   incidents, devices, ml_feedback  +  sube a S3
+
+
+==============================================================================
+  CODIGO COMPLETO DE CADA LAMBDA
+==============================================================================
+
+------------------------------------------------------------------------------
+  1. POST /auth/login  →  auth/login.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: POST /auth/login
+Valida credenciales en RDS y devuelve JWT.
+"""
+import json, os, hmac, hashlib, base64
+from datetime import datetime, timezone, timedelta
+import psycopg2
+
+DB_URL  = os.environ["DATABASE_URL"]
+JWT_KEY = os.environ["JWT_SECRET"]
+
+def handler(event, context):
+    try:
+        body  = json.loads(event.get("body", "{}"))
+        email = body.get("email", "").strip().lower()
+        pwd   = body.get("password", "")
+
+        if not email or not pwd:
+            return _resp(422, {"detail": "email y password requeridos"})
+
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor()
+        cur.execute("SELECT id, name, role, password_hash FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+        conn.close()
+
+        if not row or not _verify(pwd, row[3]):
+            return _resp(401, {"detail": "Credenciales invalidas"})
+
+        token = _make_jwt({"sub": str(row[0]), "email": email, "role": row[2]})
+        return _resp(200, {
+            "token": token,
+            "user":  {"id": str(row[0]), "email": email, "name": row[1], "role": row[2]},
+        })
+    except Exception as e:
+        print(f"[ERROR] login: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _verify(pwd, hashed):
+    return hmac.compare_digest(
+        hashlib.sha256(pwd.encode()).hexdigest(), hashed or ""
+    )
+
+def _make_jwt(payload):
+    payload["exp"] = int((datetime.now(timezone.utc) + timedelta(hours=8)).timestamp())
+    header  = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=")
+    body    = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=")
+    sig     = hmac.new(JWT_KEY.encode(), header + b"." + body, hashlib.sha256).digest()
+    return f"{header.decode()}.{body.decode()}.{base64.urlsafe_b64encode(sig).rstrip(b'=').decode()}"
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body),
+    }
+
+  NOTA: password_hash debe ser SHA-256 del password en hex.
+        En Python: hashlib.sha256("mipassword".encode()).hexdigest()
+
+
+------------------------------------------------------------------------------
+  2. GET /devices  →  devices/list_devices.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /devices
+Retorna todos los devices con su ultima lectura curated y datos del customer.
+"""
+import json, os
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+def handler(event, context):
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                d.id, d.device_key, d.customer_code, d.status,
+                d.last_seen_at, d.first_seen_at, d.tags,
+                c.name  AS customer_name,
+                s.name  AS site_name,
+                r.cpu_pct, r.cpu_temp_c, r.battery_charge_pct,
+                r.risk_score, r.risk_bucket, r.mem_used_pct,
+                da.id IS NOT NULL AS assigned
+            FROM devices d
+            LEFT JOIN customers c ON c.code = d.customer_code
+            LEFT JOIN sites s     ON s.id   = d.current_site_id
+            LEFT JOIN LATERAL (
+                SELECT cpu_pct, cpu_temp_c, battery_charge_pct,
+                       risk_score, risk_bucket, mem_used_pct
+                FROM readings_curated_parent
+                WHERE device_id = d.id
+                ORDER BY event_ts DESC LIMIT 1
+            ) r ON true
+            LEFT JOIN LATERAL (
+                SELECT id FROM device_assignments
+                WHERE device_id = d.id AND unassigned_at IS NULL
+                LIMIT 1
+            ) da ON true
+            WHERE d.status != 'RETIRED'
+            ORDER BY r.risk_score DESC NULLS LAST
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return _resp(200, rows)
+    except Exception as e:
+        print(f"[ERROR] list_devices: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  3. GET /devices/{device_id}  →  devices/get_device.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /devices/{device_id}
+Retorna device + hardware snapshot + prediccion ML activa.
+"""
+import json, os
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+def handler(event, context):
+    device_id = event.get("pathParameters", {}).get("device_id")
+    if not device_id:
+        return _resp(400, {"detail": "device_id requerido"})
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("""
+            SELECT d.*, c.name AS customer_name, s.name AS site_name,
+                   r.risk_score, r.risk_bucket
+            FROM devices d
+            LEFT JOIN customers c ON c.code = d.customer_code
+            LEFT JOIN sites s     ON s.id   = d.current_site_id
+            LEFT JOIN LATERAL (
+                SELECT risk_score, risk_bucket FROM readings_curated_parent
+                WHERE device_id = d.id ORDER BY event_ts DESC LIMIT 1
+            ) r ON true
+            WHERE d.id = %s
+        """, (device_id,))
+        device = cur.fetchone()
+        if not device:
+            return _resp(404, {"detail": "Equipo no encontrado"})
+
+        cur.execute("""
+            SELECT h.*, ds.model AS disk_model, ds.capacity_gb,
+                   ds.temperature_c AS disk_temp_c
+            FROM device_hardware_snapshot h
+            LEFT JOIN device_storage_drive ds ON ds.hw_snapshot_id = h.id
+            WHERE h.device_id = %s ORDER BY h.snapshot_ts DESC LIMIT 1
+        """, (device_id,))
+        hardware = cur.fetchone()
+
+        cur.execute("""
+            SELECT * FROM ml_predictions
+            WHERE device_id = %s ORDER BY predicted_at DESC LIMIT 1
+        """, (device_id,))
+        prediction = cur.fetchone()
+
+        conn.close()
+        return _resp(200, {
+            **dict(device),
+            "hardware":          dict(hardware) if hardware else None,
+            "active_prediction": dict(prediction) if prediction else None,
+        })
+    except Exception as e:
+        print(f"[ERROR] get_device: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  4. GET /devices/{device_id}/metrics?hours=24  →  metrics/device_metrics.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /devices/{device_id}/metrics?hours=24
+Lecturas curated agrupadas por hora para graficas de tendencias.
+"""
+import json, os
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+def handler(event, context):
+    device_id = event.get("pathParameters", {}).get("device_id")
+    hours     = int((event.get("queryStringParameters") or {}).get("hours", 24))
+    hours     = min(max(hours, 1), 168)
+
+    if not device_id:
+        return _resp(400, {"detail": "device_id requerido"})
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                date_trunc('hour', event_ts)  AS event_ts,
+                AVG(cpu_pct)                  AS cpu_pct,
+                AVG(cpu_temp_c)               AS cpu_temp_c,
+                MAX(cpu_temp_c_max)           AS cpu_temp_c_max,
+                AVG(mem_used_pct)             AS mem_used_pct,
+                AVG(battery_charge_pct)       AS battery_charge_pct,
+                AVG(risk_score)               AS risk_score
+            FROM readings_curated_parent
+            WHERE device_id = %s
+              AND event_ts  > NOW() - (%s || ' hours')::interval
+            GROUP BY date_trunc('hour', event_ts)
+            ORDER BY event_ts ASC
+        """, (device_id, str(hours)))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return _resp(200, rows)
+    except Exception as e:
+        print(f"[ERROR] device_metrics: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  5. GET /dashboard/summary  →  metrics/dashboard_summary.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /dashboard/summary
+KPIs del dashboard: totales, por riesgo, alertas activas.
+"""
+import json, os
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+def handler(event, context):
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'ACTIVE')                            AS total_devices,
+                COUNT(*) FILTER (WHERE status = 'ACTIVE' AND risk_bucket = 'HIGH')   AS high_risk_devices,
+                COUNT(*) FILTER (WHERE status = 'ACTIVE' AND risk_bucket = 'MEDIUM') AS medium_risk_devices,
+                COUNT(*) FILTER (WHERE status = 'ACTIVE' AND risk_bucket = 'LOW')    AS low_risk_devices
+            FROM devices d
+            LEFT JOIN LATERAL (
+                SELECT risk_bucket FROM readings_curated_parent
+                WHERE device_id = d.id ORDER BY event_ts DESC LIMIT 1
+            ) r ON true
+        """)
+        counts = dict(cur.fetchone())
+
+        cur.execute("""
+            SELECT COUNT(*) AS active_alerts FROM ml_predictions
+            WHERE class_label = 'FAILURE'
+              AND predicted_at > NOW() - INTERVAL '24 hours'
+        """)
+        alerts = cur.fetchone()["active_alerts"]
+
+        cur.execute("""
+            SELECT COUNT(*) AS new_today FROM devices
+            WHERE first_seen_at > NOW() - INTERVAL '24 hours'
+        """)
+        new_today = cur.fetchone()["new_today"]
+
+        conn.close()
+        return _resp(200, {**counts, "active_alerts": alerts, "new_today": new_today})
+    except Exception as e:
+        print(f"[ERROR] dashboard_summary: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  6. GET /alerts  →  alerts/list_alerts.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /alerts
+Alertas predictivas activas (ml_predictions HIGH/MEDIUM ultimas 24h).
+"""
+import json, os
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+def handler(event, context):
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                p.id, p.device_id, d.device_key, c.name AS customer_name,
+                p.class_label AS risk_level, p.class_prob,
+                p.eta_minutes, p.predicted_at, p.features_ref
+            FROM ml_predictions p
+            JOIN devices   d ON d.id   = p.device_id
+            JOIN customers c ON c.code = d.customer_code
+            WHERE p.class_label IN ('HIGH', 'MEDIUM', 'FAILURE')
+              AND p.predicted_at > NOW() - INTERVAL '24 hours'
+            ORDER BY p.class_prob DESC
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return _resp(200, rows)
+    except Exception as e:
+        print(f"[ERROR] list_alerts: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  7. GET + PATCH + DELETE /tickets  →  alerts/tickets_crud.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET/PATCH/DELETE /tickets
+CRUD de tickets + cierre con outcome (Ground Truth para el modelo ML).
+
+IMPORTANTE: DELETE bloquea si el ticket ya tiene outcome en ml_feedback.
+"""
+import json, os
+from datetime import datetime, timezone
+import psycopg2
+import psycopg2.extras
+
+DB_URL = os.environ["DATABASE_URL"]
+
+VALID_OUTCOMES      = {"confirmed_failure", "false_positive"}
+VALID_FAILURE_TYPES = {"cpu_thermal", "disk_io", "disk_filesystem", "bsod_disk", "battery", "other"}
+
+def handler(event, context):
+    method = event.get("httpMethod", "GET")
+    path   = event.get("path", "")
+    params = event.get("pathParameters") or {}
+
+    try:
+        if method == "GET" and "/tickets" in path and "export" not in path:
+            return list_tickets()
+        if method == "PATCH" and "close" in path:
+            return close_ticket(params.get("ticket_id"), json.loads(event.get("body") or "{}"))
+        if method == "DELETE":
+            return delete_ticket(params.get("ticket_id"))
+        return _resp(405, {"detail": "Metodo no permitido"})
+    except Exception as e:
+        print(f"[ERROR] tickets_crud: {e}")
+        return _resp(500, {"detail": "Error interno"})
+
+
+def list_tickets():
+    conn = psycopg2.connect(DB_URL)
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT i.id, i.device_id, d.device_key, c.name AS customer_name,
+               i.opened_at, i.closed_at, i.symptom AS issue_description,
+               i.severity, i.notes,
+               f.outcome, f.notes AS failure_type
+        FROM incidents i
+        JOIN devices   d ON d.id   = i.device_id
+        JOIN customers c ON c.code = d.customer_code
+        LEFT JOIN ml_feedback f ON f.incident_id = i.id
+        ORDER BY i.opened_at DESC
+    """)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return _resp(200, rows)
+
+
+def close_ticket(ticket_id, body):
+    outcome      = body.get("outcome")
+    failure_type = body.get("failure_type")
+    notes        = body.get("notes", "")
+
+    if outcome not in VALID_OUTCOMES:
+        return _resp(422, {"detail": f"outcome debe ser: {VALID_OUTCOMES}"})
+    if failure_type and failure_type not in VALID_FAILURE_TYPES:
+        return _resp(422, {"detail": f"failure_type debe ser: {VALID_FAILURE_TYPES}"})
+
+    conn = psycopg2.connect(DB_URL)
+    cur  = conn.cursor()
+    cur.execute("UPDATE incidents SET closed_at = NOW(), notes = %s WHERE id = %s", (notes, ticket_id))
+    cur.execute("""
+        INSERT INTO ml_feedback (incident_id, outcome, notes)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (incident_id) DO UPDATE SET outcome = EXCLUDED.outcome, notes = EXCLUDED.notes
+    """, (ticket_id, outcome, failure_type or notes))
+    conn.commit()
+    conn.close()
+    return _resp(200, {"id": ticket_id, "outcome": outcome, "closed_at": datetime.now(timezone.utc).isoformat()})
+
+
+def delete_ticket(ticket_id):
+    conn = psycopg2.connect(DB_URL)
+    cur  = conn.cursor()
+    # Bloquear borrado si ya tiene outcome (Ground Truth del modelo ML)
+    cur.execute("SELECT 1 FROM ml_feedback WHERE incident_id = %s", (ticket_id,))
+    if cur.fetchone():
+        conn.close()
+        return _resp(409, {"detail": "No se puede eliminar un ticket cerrado — es Ground Truth del modelo ML"})
+    cur.execute("DELETE FROM incidents WHERE id = %s", (ticket_id,))
+    if cur.rowcount == 0:
+        conn.close()
+        return _resp(404, {"detail": "Ticket no encontrado"})
+    conn.commit()
+    conn.close()
+    return _resp(204, {})
+
+
+def _resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body": json.dumps(body, default=str),
+    }
+
+
+------------------------------------------------------------------------------
+  8. GET /tickets/export  →  alerts/export_tickets_csv.py
+------------------------------------------------------------------------------
+
+"""
+Lambda: GET /tickets/export
+Genera el CSV en formato exacto que requiere validate_model.py y lo sube a S3.
+"""
+import csv, io, json, os, boto3
+from datetime import datetime, timezone
+import psycopg2
+import psycopg2.extras
+
+DB_URL    = os.environ["DATABASE_URL"]
+S3_BUCKET = os.environ.get("S3_BUCKET", "cnagent-ml-data")
+S3_KEY    = "tickets/tickets_history.csv"
+
+def handler(event, context):
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                i.id            AS ticket_id,
+                d.device_key    AS device_id,
+                i.opened_at,
+                i.closed_at,
+                COALESCE(i.notes, 'sistema') AS technician,
+                i.symptom       AS issue_description,
+                f.outcome,
+                f.notes         AS failure_type
+            FROM incidents i
+            JOIN devices d       ON d.id          = i.device_id
+            JOIN ml_feedback f   ON f.incident_id = i.id
+            WHERE i.closed_at IS NOT NULL
+              AND f.outcome    IS NOT NULL
+            ORDER BY i.opened_at ASC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=[
+            "ticket_id","device_id","opened_at","closed_at",
+            "technician","issue_description","outcome","failure_type"
+        ])
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({
+                k: (v.isoformat() if hasattr(v, 'isoformat') else v or "")
+                for k, v in dict(r).items()
+            })
+
+        csv_bytes = output.getvalue().encode("utf-8")
+
+        # Subir a S3 para que el pipeline ML lo consuma
+        s3 = boto3.client("s3")
+        s3.put_object(Bucket=S3_BUCKET, Key=S3_KEY, Body=csv_bytes, ContentType="text/csv")
+
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "text/csv",
+                "Content-Disposition": f"attachment; filename=tickets_history_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv",
+                "Access-Control-Allow-Origin": "*",
+            },
+            "body": output.getvalue(),
+            "isBase64Encoded": False,
+        }
+    except Exception as e:
+        print(f"[ERROR] export_tickets_csv: {e}")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"detail": "Error interno"}),
+        }
+
+
+==============================================================================
+  CONFIGURACION API GATEWAY
+==============================================================================
+
+  Crear un REST API en API Gateway con estas rutas:
+  (todas con Authorization: Bearer {JWT} en el header, excepto /auth/login)
+
+  POST   /auth/login                      → Lambda login
+  GET    /devices                         → Lambda list_devices
+  GET    /devices/{device_id}             → Lambda get_device
+  GET    /devices/{device_id}/metrics     → Lambda device_metrics
+  GET    /dashboard/summary               → Lambda dashboard_summary
+  GET    /alerts                          → Lambda list_alerts
+  GET    /tickets                         → Lambda tickets_crud
+  PATCH  /tickets/{ticket_id}/close       → Lambda tickets_crud
+  DELETE /tickets/{ticket_id}             → Lambda tickets_crud
+  GET    /tickets/export                  → Lambda export_tickets_csv
+
+  Habilitar CORS en todas las rutas (Access-Control-Allow-Origin: *)
+
+  Cuando esten listas las Lambdas, solo cambiar esta linea en el frontend:
+  frontend/.env → VITE_API_BASE_URL=https://<tu-api-id>.execute-api.<region>.amazonaws.com/prod
+
+
+==============================================================================
+  FORMATO JSON QUE ESPERA EL FRONTEND (no cambiar nombres de campos)
+==============================================================================
+
+  POST /auth/login — Response:
+  {
+    "token": "eyJ...",
+    "user": { "id": "uuid", "email": "...", "name": "...", "role": "admin" }
+  }
+
+  GET /devices — Response (array):
+  [{
+    "id": "uuid", "device_key": "EQ-001", "customer_name": "Empresa Alpha",
+    "status": "ACTIVE", "risk_bucket": "HIGH", "risk_score": 0.82,
+    "last_seen_at": "2026-04-19T10:00:00Z", "assigned": true
+  }]
+
+  GET /devices/{id} — Response:
+  {
+    ...device, "hardware": { "cpu_model": "...", "mem_total_mb": 16384, ... },
+    "active_prediction": { "class_prob": 0.91, "eta_minutes": 47, "main_risk_factors": "..." }
+  }
+
+  GET /tickets — Response (array):
+  [{
+    "id": 1, "device_key": "EQ-001", "customer_name": "...",
+    "risk_bucket": "HIGH", "class_prob": 0.91,
+    "opened_at": "...", "closed_at": null,
+    "issue_description": "[CNAgent · AUTO] ...",
+    "technician": "sistema", "outcome": null, "failure_type": null
+  }]
+
+  PATCH /tickets/{id}/close — Body:
+  { "outcome": "confirmed_failure", "failure_type": "cpu_thermal", "notes": "..." }
+
+
+==============================================================================
+  FIN DEL DOCUMENTO
+==============================================================================

@@ -1,0 +1,8 @@
+# Lambda layer: numpy / scipy / pandas / scikit-learn (build: scripts/build_ml_scipy_layer.sh).
+# Keep pins aligned with application expectations.
+joblib==1.5.3
+numpy==2.4.4
+pandas==2.3.3
+scikit-learn==1.8.0
+scipy==1.17.1
+threadpoolctl==3.6.0

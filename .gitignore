@@ -4,6 +4,11 @@ snapshots/
 env/*
 .localstack/
 .serverless/
+.py-requirements-cache/
+layers/ml-deps/python/
+layers/ml-scipy/python/
+layers/ml-analytics/python/
+layers/ml-scipy-pandas/python/
 .deps/
 .venv/
 scripts/export_readings/*

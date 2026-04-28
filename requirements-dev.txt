@@ -1,6 +1,13 @@
+-r requirements.txt
+-r requirements-ml-layer.txt
 
 pytest==8.3.3
 pytest-cov==5.0.0
 moto[sqs]==5.0.15
 freezegun==1.5.1
 faker==30.8.2
+localstack==4.9.2
+localstack-client==2.10
+localstack-core==4.9.2
+localstack-ext==4.9.2
+localstack-py-avro-schema==3.9.3
