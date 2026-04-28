@@ -1,0 +1,80 @@
+
+service: telemetry-ingest-python
+frameworkVersion: '4'
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 10
+  environment:
+    TELEMETRY_QUEUE_URL: ${self:custom.queueUrl.${sls:stage}}
+    DB_HOST: ${env:DB_HOST, ssm:/cn-telemetry/${sls:stage}/db/host~true}
+    DB_PORT: ${env:DB_PORT, ssm:/cn-telemetry/${sls:stage}/db/port~true}
+    DB_NAME: ${env:DB_NAME, ssm:/cn-telemetry/${sls:stage}/db/name~true}
+    DB_USER: ${env:DB_USER, ssm:/cn-telemetry/${sls:stage}/db/user~true}
+    DB_PASSWORD: ${env:DB_PASSWORD, ssm:/cn-telemetry/${sls:stage}/db/password~true}
+    ENV: ${env:ENV, '${sls:stage}'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+  iamRoleStatements:
+    - Effect: Allow
+      Action: [sqs:SendMessage]
+      Resource: { "Fn::GetAtt": ["TelemetryQueue", "Arn"] }
+    - Effect: Allow
+      Action:
+        - ssm:GetParameter
+        - ssm:GetParameters
+        - ssm:GetParametersByPath
+      Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/cn-telemetry/*"
+plugins:
+  # - serverless-python-requirements
+  # - serverless-dotenv-plugin
+custom:
+  # isLocal: ${strEquals(${sls:stage}, 'local')}
+  queueUrl:
+    local: ${env:TELEMETRY_QUEUE_URL, 'http://localhost:4566/000000000000/telemetry.fifo'}
+    dev: { Ref: TelemetryQueue }
+    prod: { Ref: TelemetryQueue }
+  pythonRequirements:
+    slim: true
+    strip: true
+    dockerizePip: true
+package:
+  patterns:
+    - 'src/**'
+    - 'requirements.txt'
+functions:
+  httpIngest:
+    handler: src/entrypoints/http/handlers.http_ingest
+    events:
+      - httpApi: { method: POST, path: /telemetry }
+      - httpApi: { method: GET,  path: /health }
+  sqsConsumer:
+    handler: src/entrypoints/sqs/consumer.handle
+    timeout: 60
+    memorySize: 1024
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["TelemetryQueue", "Arn"] }
+resources:
+  Resources:
+    TelemetryQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        FifoQueue: true
+        ContentBasedDeduplication: true
+        QueueName: ${self:service}-${sls:stage}.fifo
+        VisibilityTimeout: 120
+        RedrivePolicy:
+          deadLetterTargetArn: { "Fn::GetAtt": ["TelemetryDLQ", "Arn"] }
+          maxReceiveCount: 5
+    TelemetryDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        FifoQueue: true
+        ContentBasedDeduplication: true
+        QueueName: ${self:service}-${sls:stage}-dlq.fifo
+  Outputs:
+    TelemetryQueueUrl:
+      Value: { "Ref": "TelemetryQueue" }

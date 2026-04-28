@@ -1,0 +1,12 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"   # endpoint unificado
+    environment:
+      - DEBUG=1
+      - SERVICES=sqs,sts,iam # agrega otros si los necesitas: lambda,s3,dynamodb
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "./.localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"

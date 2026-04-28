@@ -1,0 +1,304 @@
+{
+  "Os": {
+    "Name": "Microsoft Windows 11 Pro",
+    "Build": "26200",
+    "Uptime": "11.09:40:36.4939157",
+    "Edition": "64 bits",
+    "Version": "10.0.26200",
+    "InstallDate": "2025-07-27T08:03:56-05:00",
+    "HoursSinceLastBoot": 273.6768038654722,
+    "WindowsUpdateChannel": "GA"
+  },
+  "Ops": {
+    "AttnStatus": "Sin atención"
+  },
+  "Risk": {
+    "RiskScore": 0,
+    "RiskBucket": "Bajo",
+    "TopFactors": [
+      "Sin factores de riesgo detectados"
+    ]
+  },
+  "Events": {
+    "Whea": {
+      "ByType": {
+        "Pcie": 0,
+        "Cache": 0,
+        "Memory": 0
+      },
+      "CorrectedSinceBoot": 0,
+      "UncorrectedSinceBoot": 0
+    },
+    "BugcheckCount7d": 0,
+    "WheaCorrected24h": 0,
+    "DiskErrorEvents24h": 0,
+    "WheaUncorrected24h": 0,
+    "DeviceManagerErrors24h": 0
+  },
+  "Derived": {
+    "DiskHealthScore": 100,
+    "CpuTempToLoadRatio": 5.18,
+    "HoursSinceLastBoot": 273.6768038654722,
+    "ReliabilityIndex24h": 100
+  },
+  "Drivers": {},
+  "Hardware": {
+    "Cpu": {
+      "Model": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+      "Vendor": "GenuineIntel",
+      "Microcode": "0x0000003C",
+      "BaseClockMhz": 2304,
+      "CoresPhysical": 8,
+      "ThreadsLogical": 16
+    },
+    "Gpus": [
+      {
+        "Model": "NVIDIA GeForce RTX 3060 Laptop GPU",
+        "Vendor": "NVIDIA",
+        "VramMb": 4095,
+        "DriverVersion": "32.0.15.7652"
+      },
+      {
+        "Model": "Intel(R) UHD Graphics",
+        "Vendor": "Intel Corporation",
+        "VramMb": 1024,
+        "DriverVersion": "30.0.100.9864"
+      }
+    ],
+    "Memory": {
+      "Slots": [
+        {
+          "Slot": "BANK 0",
+          "Type": "26",
+          "SizeMb": 16384,
+          "Vendor": "Team Group Inc",
+          "SpeedMts": 3200,
+          "FormFactor": "12",
+          "PartNumber": "TEAMGROUP-SD4-3200  "
+        },
+        {
+          "Slot": "BANK 0",
+          "Type": "26",
+          "SizeMb": 16384,
+          "Vendor": "Team Group Inc",
+          "SpeedMts": 3200,
+          "FormFactor": "12",
+          "PartNumber": "TEAMGROUP-SD4-3200  "
+        }
+      ],
+      "TotalMb": 32531
+    },
+    "Machine": {
+      "AssetTag": "System Enclosure 0",
+      "SerialHash": "14d74b6173a818de",
+      "ChassisType": "Notebook",
+      "ProductName": "Nitro AN515-57",
+      "Manufacturer": "Acer"
+    },
+    "Storage": [
+      {
+        "Model": "NVMe SAMSUNG MZVLQ512HBLU-00B00",
+        "DriveId": "\\\\.\\PHYSICALDRIVE0",
+        "Interface": "SCSI",
+        "CapacityGb": 476,
+        "Partitions": [
+          {
+            "Fs": "NTFS",
+            "Chkdsk": {
+              "Dirty": false,
+              "LastScanStatus": "OK"
+            },
+            "FreeGb": 83,
+            "Letter": "C:",
+            "SizeGb": 475,
+            "Bitlocker": "Unprotected"
+          }
+        ],
+        "SerialHash": "da5bad09d7dd4eb0"
+      },
+      {
+        "Model": "NVMe Acer SSD FA100 512GB",
+        "DriveId": "\\\\.\\PHYSICALDRIVE1",
+        "Interface": "SCSI",
+        "CapacityGb": 476,
+        "Partitions": [],
+        "SerialHash": "3b77cc92f07aa5f5"
+      }
+    ],
+    "Baseboard": {
+      "Product": "Scala_TLS",
+      "Version": "V1.17",
+      "BiosUefi": {
+        "Date": "2022-06-01T19:00:00-05:00",
+        "Vendor": "Insyde Corp.",
+        "Version": "V1.17"
+      },
+      "SerialHash": "5252b48258a160cb",
+      "Manufacturer": "TGL"
+    }
+  },
+  "Identity": {
+    "DeviceId": "f092716d0d86d2e1",
+    "Location": "TEST",
+    "CustomerId": "TES",
+    "HostnameHash": "f092716d0d86d2e1"
+  },
+  "UIRollup": {
+    "FleetKpis": {
+      "LastUpdateAt": "2026-04-06T23:39:36.2226674+00:00",
+      "TotalDevices": 1,
+      "DevicesAtRisk": 0,
+      "ActivePredictiveAlerts": 0
+    },
+    "MiniTimeseries": {
+      "CpuPctLast15m": [
+        19.269573211669922,
+        9.779900550842285
+      ],
+      "CpuTempCLast15m": [
+        62,
+        56
+      ],
+      "MemUsedPctLast15m": [
+        60.9,
+        61.6
+      ]
+    }
+  },
+  "Telemetry": {
+    "Io": {
+      "PerDisk": {
+        "\\\\.\\PHYSICALDRIVE0": {
+          "AvgMs": 1.6,
+          "ReadsPerSec": 106.3,
+          "WritesPerSec": 79.5
+        },
+        "\\\\.\\PHYSICALDRIVE1": {
+          "AvgMs": 0.4,
+          "ReadsPerSec": 0
+        }
+      },
+      "WindowSeconds": 80,
+      "AggregateAvgMs": 1
+    },
+    "Cpu": {
+      "Pct": 9.779900550842285,
+      "TempC": 55,
+      "ClockMhz": 4307.47705078125,
+      "TempCAvg": 50.69078826904297,
+      "TempCMax": 56,
+      "PctMax_5m": 19.269573211669922,
+      "PctP95_5m": 18.79508957862854,
+      "TempMaxC_5m": 62,
+      "TempP95C_5m": 61.7,
+      "TempCpuMaxC_5m": 62,
+      "TempCpuP95C_5m": 61.7,
+      "ThermalThrottling": false,
+      "ThrottleEventsSinceBoot": 0
+    },
+    "Gpu": [
+      {
+        "Pct": 5.259831428527832,
+        "Name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+        "TempC": 49,
+        "HotspotC": 53.625,
+        "TempMaxC_5m": 49,
+        "TempP95C_5m": 49
+      },
+      {
+        "Pct": 0,
+        "Name": "Intel(R) UHD Graphics"
+      }
+    ],
+    "Io5m": {
+      "PerDisk": {
+        "\\\\.\\PHYSICALDRIVE0": {
+          "AvgMs": 1.6,
+          "ReadsPerSec": 106.3,
+          "WritesPerSec": 79.5
+        },
+        "\\\\.\\PHYSICALDRIVE1": {
+          "AvgMs": 0.4,
+          "ReadsPerSec": 0
+        }
+      },
+      "WindowSeconds": 300,
+      "AggregateAvgMs": 1
+    },
+    "Disks": [
+      {
+        "DriveId": "\\\\.\\PHYSICALDRIVE0",
+        "FreePct": 17.5,
+        "ReadBps": 6621560,
+        "WriteBps": 1532615
+      },
+      {
+        "DriveId": "\\\\.\\PHYSICALDRIVE1",
+        "ReadBps": 226
+      }
+    ],
+    "Smart": {
+      "Sata": [
+        {
+          "DriveId": "\\\\.\\PHYSICALDRIVE0",
+          "PowerOnHours": 0,
+          "SelfTestLong": {
+            "Status": "NotSupported"
+          },
+          "SelfTestShort": {
+            "Status": "NotSupported"
+          },
+          "ReallocatedSectors": 0
+        },
+        {
+          "DriveId": "\\\\.\\PHYSICALDRIVE1",
+          "PowerOnHours": 0,
+          "SelfTestLong": {
+            "Status": "NotSupported"
+          },
+          "SelfTestShort": {
+            "Status": "NotSupported"
+          },
+          "ReallocatedSectors": 0
+        }
+      ]
+    },
+    "Memory": {
+      "UsedMb": 20036,
+      "UsedPct": 61.6
+    },
+    "Battery": {
+      "Status": "ac",
+      "ChargePct": 100,
+      "CycleCount": 19
+    },
+    "Network": {},
+    "Storage30d": {
+      "Counts": {
+        "7": 2,
+        "55": 64,
+        "129": 4,
+        "153": 4
+      },
+      "LastSeen": {
+        "7": "2026-03-19T00:12:59-05:00",
+        "55": "2026-03-15T11:15:34-05:00",
+        "129": "2026-03-15T11:15:26-05:00",
+        "153": "2026-03-15T11:15:26-05:00"
+      }
+    },
+    "UptimeSeconds": 985236
+  },
+  "CollectedAt": "2026-04-06T23:39:36.2226674+00:00",
+  "AgentVersion": "3.0.0",
+  "SchemaVersion": "1.2.0",
+  "SamplePeriodSec": 80,
+  "SecurityPosture": {
+    "TpmPresent": true,
+    "TpmVersion": "2.0, 0, 1.38",
+    "SecureBootEnabled": true,
+    "BitlockerSystemDrive": "Unprotected",
+    "VirtualizationEnabled": false,
+    "VirtualizationSupported": false
+  }
+}

@@ -1,0 +1,303 @@
+{
+  "Os": {
+    "Name": "Microsoft Windows 11 Home",
+    "Build": "26200",
+    "Uptime": "11.13:38:59.0408590",
+    "Edition": "64-bit",
+    "Version": "10.0.26200",
+    "InstallDate": "2026-02-17T20:55:59-05:00",
+    "HoursSinceLastBoot": 277.64973357194447,
+    "WindowsUpdateChannel": "GA"
+  },
+  "Ops": {
+    "AttnStatus": "Sin atención"
+  },
+  "Risk": {
+    "RiskScore": 0.35,
+    "RiskBucket": "Medio",
+    "TopFactors": [
+      "Eventos de disco críticos: 19",
+      "CPU con throttling térmico"
+    ]
+  },
+  "Events": {
+    "Whea": {
+      "ByType": {
+        "Pcie": 0,
+        "Cache": 0,
+        "Memory": 0
+      },
+      "CorrectedSinceBoot": 0,
+      "UncorrectedSinceBoot": 0
+    },
+    "BugcheckCount7d": 0,
+    "WheaCorrected24h": 0,
+    "DiskErrorEvents24h": 0,
+    "WheaUncorrected24h": 0,
+    "DeviceManagerErrors24h": 0
+  },
+  "Derived": {
+    "CpuTempToLoadRatio": 0.76,
+    "HoursSinceLastBoot": 277.64973357194447,
+    "ReliabilityIndex24h": 100
+  },
+  "Drivers": {},
+  "Hardware": {
+    "Cpu": {
+      "Model": "11th Gen Intel(R) Core(TM) i7-11390H @ 3.40GHz",
+      "Vendor": "GenuineIntel",
+      "Microcode": "0x0000003C",
+      "BaseClockMhz": 2919,
+      "CoresPhysical": 4,
+      "ThreadsLogical": 8
+    },
+    "Gpus": [
+      {
+        "Model": "Intel(R) Iris(R) Xe Graphics",
+        "Vendor": "Intel Corporation",
+        "VramMb": 2047,
+        "DriverVersion": "32.0.101.7077"
+      },
+      {
+        "Model": "NVIDIA GeForce MX450",
+        "Vendor": "NVIDIA",
+        "VramMb": 2048,
+        "DriverVersion": "32.0.15.8195"
+      }
+    ],
+    "Memory": {
+      "Slots": [
+        {
+          "Slot": "BANK 0",
+          "Type": "26",
+          "SizeMb": 16384,
+          "Vendor": "04EF0000802C",
+          "SpeedMts": 3200,
+          "FormFactor": "12",
+          "PartNumber": "TEAMGROUP-SD4-3200  "
+        },
+        {
+          "Slot": "BANK 0",
+          "Type": "26",
+          "SizeMb": 16384,
+          "Vendor": "04EF0000802C",
+          "SpeedMts": 3200,
+          "FormFactor": "12",
+          "PartNumber": "TEAMGROUP-SD4-3200  "
+        }
+      ],
+      "TotalMb": 32510
+    },
+    "Machine": {
+      "AssetTag": "System Enclosure 0",
+      "SerialHash": "4c3e97815de00010",
+      "ChassisType": "Notebook",
+      "ProductName": "Inspiron 15 5510",
+      "Manufacturer": "Dell Inc."
+    },
+    "Storage": [
+      {
+        "Model": "KBG40ZNS512G NVMe KIOXIA 512GB",
+        "DriveId": "\\\\.\\PHYSICALDRIVE0",
+        "Interface": "SCSI",
+        "CapacityGb": 476,
+        "Partitions": [
+          {
+            "Fs": "NTFS",
+            "Chkdsk": {
+              "Dirty": false,
+              "LastScanStatus": "OK"
+            },
+            "FreeGb": 31,
+            "Letter": "C:",
+            "SizeGb": 471,
+            "Bitlocker": "Unprotected"
+          }
+        ],
+        "SerialHash": "fedcf2c6c2f7d617",
+        "TemperatureC": 60
+      }
+    ],
+    "Baseboard": {
+      "Product": "0Y20X4",
+      "Version": "A00",
+      "BiosUefi": {
+        "Date": "2025-04-29T19:00:00-05:00",
+        "Vendor": "Dell Inc.",
+        "Version": "2.33.1"
+      },
+      "SerialHash": "6613fc8b40d1b547",
+      "Manufacturer": "Dell Inc."
+    }
+  },
+  "Identity": {
+    "DeviceId": "3d62bd166204f6e8",
+    "Location": "Arequipa",
+    "CustomerId": "Computo Nacional",
+    "HostnameHash": "3d62bd166204f6e8"
+  },
+  "UIRollup": {
+    "FleetKpis": {
+      "LastUpdateAt": "2026-04-10T15:26:16.9364928+00:00",
+      "TotalDevices": 1,
+      "DevicesAtRisk": 0,
+      "ActivePredictiveAlerts": 1
+    },
+    "MiniTimeseries": {
+      "CpuPctLast15m": [
+        35.564483642578125,
+        30.870681762695312,
+        34.53764343261719,
+        25.57327651977539,
+        27.728288650512695,
+        22.201622009277344,
+        37.655372619628906,
+        28.564388275146484,
+        33.89870071411133,
+        41.38317108154297,
+        31.125276565551758,
+        54.37326431274414,
+        58.683712005615234,
+        84.8788070678711,
+        79.42357635498047
+      ],
+      "CpuTempCLast15m": [
+        82,
+        83,
+        78,
+        78,
+        77,
+        86,
+        80,
+        83,
+        79,
+        80,
+        82,
+        82,
+        83,
+        87,
+        89
+      ],
+      "MemUsedPctLast15m": [
+        85.5,
+        84.9,
+        84.5,
+        78.4,
+        78.2,
+        78.4,
+        78.5,
+        74.6,
+        76.3,
+        78.6,
+        77.6,
+        77.2,
+        77.2,
+        78.7,
+        78.7
+      ]
+    }
+  },
+  "Telemetry": {
+    "Io": {
+      "PerDisk": {
+        "\\\\.\\PHYSICALDRIVE0": {
+          "AvgMs": 0.4,
+          "QueueLenAvg": 2,
+          "ReadsPerSec": 12.1,
+          "WritesPerSec": 45.4
+        }
+      },
+      "WindowSeconds": 80,
+      "AggregateAvgMs": 0.4
+    },
+    "Cpu": {
+      "Pct": 79.42357635498047,
+      "TempC": 89,
+      "ClockMhz": 1409.0035400390625,
+      "TempCAvg": 60.5,
+      "TempCMax": 89,
+      "PctMax_5m": 84.8788070678711,
+      "PctP95_5m": 81.06014556884764,
+      "TempMaxC_5m": 89,
+      "TempP95C_5m": 87.6,
+      "TempCpuMaxC_5m": 89,
+      "TempCpuP95C_5m": 87.6,
+      "ThermalThrottling": true,
+      "ThrottleEventsSinceBoot": 0
+    },
+    "Gpu": [
+      {
+        "Pct": 11.220169067382812,
+        "Name": "NVIDIA GeForce MX450",
+        "TempC": 83,
+        "HotspotC": 92.625,
+        "TempMaxC_5m": 83,
+        "TempP95C_5m": 82.3
+      },
+      {
+        "Pct": 0,
+        "Name": "Intel(R) Iris(R) Xe Graphics"
+      }
+    ],
+    "Io5m": {
+      "PerDisk": {
+        "\\\\.\\PHYSICALDRIVE0": {
+          "AvgMs": 0.7,
+          "QueueLenAvg": 1.2,
+          "ReadsPerSec": 18.9,
+          "WritesPerSec": 51.3
+        }
+      },
+      "WindowSeconds": 300,
+      "AggregateAvgMs": 0.7
+    },
+    "Disks": [
+      {
+        "TempC": 60,
+        "DriveId": "\\\\.\\PHYSICALDRIVE0",
+        "FreePct": 6.6,
+        "ReadBps": 400834,
+        "WriteBps": 1692330,
+        "QueueLength": 2
+      }
+    ],
+    "Smart": {},
+    "Memory": {
+      "UsedMb": 25589,
+      "UsedPct": 78.7
+    },
+    "Battery": {
+      "Status": "ac",
+      "ChargePct": 100,
+      "CycleCount": 0
+    },
+    "Network": {},
+    "Storage30d": {
+      "Counts": {
+        "7": 19,
+        "55": 48,
+        "129": 6,
+        "153": 6
+      },
+      "LastSeen": {
+        "7": "2026-03-12T14:52:08-05:00",
+        "55": "2026-03-12T14:52:09-05:00",
+        "129": "2026-03-12T14:52:05-05:00",
+        "153": "2026-03-12T14:52:05-05:00"
+      }
+    },
+    "UptimeSeconds": 999539
+  },
+  "CollectedAt": "2026-04-10T15:26:16.9364928+00:00",
+  "AgentVersion": "3.0.0",
+  "SchemaVersion": "1.2.0",
+  "SamplePeriodSec": 80,
+  "SecurityPosture": {
+    "TpmPresent": true,
+    "TpmVersion": "2.0, 0, 1.38",
+    "SecureBootEnabled": false,
+    "BitlockerSystemDrive": "Unprotected",
+    "VirtualizationEnabled": false,
+    "VirtualizationSupported": false
+  }
+}
