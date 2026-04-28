@@ -30,6 +30,14 @@ provider:
     ML_MIN_SNAPSHOTS: ${env:ML_MIN_SNAPSHOTS, '5'}
     ML_RECENT_WINDOW: ${env:ML_RECENT_WINDOW, '50'}
     ML_SKLEARN_N_JOBS: ${env:ML_SKLEARN_N_JOBS, '1'}
+    JWT_SECRET: ${env:JWT_SECRET, ''}
+    S3_BUCKET: ${env:S3_BUCKET, 'cnagent-ml-data'}
+    AUTO_TICKET_THRESHOLD: ${env:AUTO_TICKET_THRESHOLD, '0.72'}
+  httpApi:
+    cors:
+      allowedOrigins: ['*']
+      allowedHeaders: ['Content-Type', 'Authorization']
+      allowedMethods: [GET, POST, PATCH, DELETE, OPTIONS]
   iamRoleStatements:
     - Effect: Allow
       Action: [sqs:SendMessage]
@@ -40,10 +48,15 @@ provider:
         - ssm:GetParameters
         - ssm:GetParametersByPath
       Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/cn-telemetry/*"
+    - Effect: Allow
+      Action: [s3:PutObject]
+      Resource: "arn:aws:s3:::${env:S3_BUCKET, 'cnagent-ml-data'}/tickets/*"
 plugins:
   # - serverless-python-requirements
   # - serverless-dotenv-plugin
 custom:
+  # Physical Lambda name prefix for dashboard APIs (GUIA).
+  frontLambdaNamePrefix: ${self:service}-front-${sls:stage}-
   # isLocal: ${strEquals(${sls:stage}, 'local')}
   accountId: ${env:AWS_ACCOUNT_ID, '000000000000'}
   queueUrl:
@@ -104,6 +117,67 @@ functions:
       - schedule: rate(1 day)
       - httpApi: { method: POST, path: /internal/ml-risk/run }
       - httpApi: { method: GET, path: /internal/ml-risk/run }
+  frontAuthLogin:
+    name: ${self:custom.frontLambdaNamePrefix}auth-login
+    handler: src/entrypoints/http/front/auth_login.handle
+    timeout: 15
+    events:
+      - httpApi: { method: POST, path: /auth/login }
+      - httpApi: { method: OPTIONS, path: /auth/login }
+  frontDevicesList:
+    name: ${self:custom.frontLambdaNamePrefix}devices-list
+    handler: src/entrypoints/http/front/devices_list.handle
+    timeout: 29
+    events:
+      - httpApi: { method: GET, path: /devices }
+      - httpApi: { method: OPTIONS, path: /devices }
+  frontDevicesGet:
+    name: ${self:custom.frontLambdaNamePrefix}devices-get
+    handler: src/entrypoints/http/front/devices_get.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET, path: '/devices/{device_id}' }
+      - httpApi: { method: OPTIONS, path: '/devices/{device_id}' }
+  frontDeviceMetrics:
+    name: ${self:custom.frontLambdaNamePrefix}device-metrics
+    handler: src/entrypoints/http/front/metrics_device.handle
+    timeout: 29
+    events:
+      - httpApi: { method: GET, path: '/devices/{device_id}/metrics' }
+      - httpApi: { method: OPTIONS, path: '/devices/{device_id}/metrics' }
+  frontDashboardSummary:
+    name: ${self:custom.frontLambdaNamePrefix}dashboard-summary
+    handler: src/entrypoints/http/front/metrics_dashboard.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET, path: /dashboard/summary }
+      - httpApi: { method: OPTIONS, path: /dashboard/summary }
+  frontAlertsList:
+    name: ${self:custom.frontLambdaNamePrefix}alerts-list
+    handler: src/entrypoints/http/front/alerts_list.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET, path: /alerts }
+      - httpApi: { method: OPTIONS, path: /alerts }
+  frontTicketsCrud:
+    name: ${self:custom.frontLambdaNamePrefix}tickets-crud
+    handler: src/entrypoints/http/front/tickets_crud.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET, path: /tickets }
+      - httpApi: { method: PATCH, path: '/tickets/{ticket_id}/close' }
+      - httpApi: { method: DELETE, path: '/tickets/{ticket_id}' }
+      - httpApi: { method: OPTIONS, path: /tickets }
+      - httpApi: { method: OPTIONS, path: '/tickets/{ticket_id}/close' }
+      - httpApi: { method: OPTIONS, path: '/tickets/{ticket_id}' }
+  frontTicketsExport:
+    name: ${self:custom.frontLambdaNamePrefix}tickets-export
+    handler: src/entrypoints/http/front/tickets_export.handle
+    timeout: 60
+    memorySize: 512
+    events:
+      - httpApi: { method: GET, path: /tickets/export }
+      - httpApi: { method: OPTIONS, path: /tickets/export }
 resources:
   Resources:
     TelemetryQueue:
