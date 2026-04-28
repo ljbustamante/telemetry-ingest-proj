@@ -4,4 +4,6 @@ snapshots/
 env/*
 .localstack/
 .serverless/
+.deps/
+.venv/
 scripts/export_readings/*

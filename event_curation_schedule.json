@@ -1,0 +1,11 @@
+{
+  "version": "0",
+  "id": "invoke-local-schedule",
+  "detail-type": "Scheduled Event",
+  "source": "aws.events",
+  "account": "000000000000",
+  "time": "2026-01-01T12:00:00Z",
+  "region": "us-east-1",
+  "resources": [],
+  "detail": {}
+}

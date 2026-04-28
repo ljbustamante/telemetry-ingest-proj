@@ -3,7 +3,7 @@ service: telemetry-ingest-python
 frameworkVersion: '4'
 provider:
   name: aws
-  runtime: python3.11
+  runtime: python3.13
   region: ${opt:region, 'us-east-1'}
   stage: ${opt:stage, 'dev'}
   memorySize: 512
@@ -17,6 +17,8 @@ provider:
     DB_PASSWORD: ${env:DB_PASSWORD, ssm:/cn-telemetry/${sls:stage}/db/password~true}
     ENV: ${env:ENV, '${sls:stage}'}
     LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+    CURATION_HTTP_SECRET: ${env:CURATION_HTTP_SECRET, ''}
+    CURATION_BATCH_SIZE: ${env:CURATION_BATCH_SIZE, '500'}
   iamRoleStatements:
     - Effect: Allow
       Action: [sqs:SendMessage]
@@ -29,9 +31,10 @@ provider:
       Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/cn-telemetry/*"
 plugins:
   # - serverless-python-requirements
-  # - serverless-dotenv-plugin
+  - serverless-dotenv-plugin
 custom:
   # isLocal: ${strEquals(${sls:stage}, 'local')}
+  accountId: ${env:AWS_ACCOUNT_ID, '000000000000'}
   queueUrl:
     local: ${env:TELEMETRY_QUEUE_URL, 'http://localhost:4566/000000000000/telemetry.fifo'}
     dev: { Ref: TelemetryQueue }
@@ -57,6 +60,14 @@ functions:
     events:
       - sqs:
           arn: { "Fn::GetAtt": ["TelemetryQueue", "Arn"] }
+  curationEtl:
+    handler: src/entrypoints/aws/curation_handler.handle
+    timeout: 120
+    memorySize: 1024
+    events:
+      - schedule: rate(10 minutes)
+      - httpApi: { method: POST, path: /internal/curation/run }
+      - httpApi: { method: GET, path: /internal/curation/run }
 resources:
   Resources:
     TelemetryQueue:
