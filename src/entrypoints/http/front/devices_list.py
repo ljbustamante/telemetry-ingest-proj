@@ -59,9 +59,9 @@ _SQL = """
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, _pp, _q, _body = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "GET":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
     bad = require_auth(event)
     if bad:
         return bad
@@ -72,10 +72,10 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(_SQL)
         rows = [dict(r) for r in cur.fetchall()]
-        return response(200, rows)
+        return response(200, rows, event=event)
     except Exception as e:
         logger.exception("list_devices: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()

@@ -33,11 +33,11 @@ provider:
     JWT_SECRET: ${env:JWT_SECRET, ''}
     S3_BUCKET: ${env:S3_BUCKET, 'cnagent-ml-data'}
     AUTO_TICKET_THRESHOLD: ${env:AUTO_TICKET_THRESHOLD, '0.72'}
-  httpApi:
-    cors:
-      allowedOrigins: ['*']
-      allowedHeaders: ['Content-Type', 'Authorization']
-      allowedMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+    # Comma-separated allowed Origins; if the request Origin matches, it is echoed and
+    # Access-Control-Allow-Credentials is set (needed with fetch credentials / cookies).
+    # Default * = no credentials with cross-origin. For local Vite + credentials use e.g.:
+    # CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+    CORS_ALLOWED_ORIGINS: ${env:CORS_ALLOWED_ORIGINS, '*'}
   iamRoleStatements:
     - Effect: Allow
       Action: [sqs:SendMessage]
@@ -51,6 +51,16 @@ provider:
     - Effect: Allow
       Action: [s3:PutObject]
       Resource: "arn:aws:s3:::${env:S3_BUCKET, 'cnagent-ml-data'}/tickets/*"
+  vpc:
+    securityGroupIds:
+      - sg-088776f8785a95a21  # tu security group de lambda (lambda-rds-4)
+    subnetIds:
+      - subnet-0ef7053a7b89886c7  # subnets donde está el RDS
+      - subnet-06f9eebd45c60931a
+      - subnet-08e2e5b6c49522ed2
+      - subnet-0ac67d83feabf42e3
+      - subnet-0a7f09383b0caffec
+      - subnet-04b27fd1a699af324
 plugins:
   # - serverless-python-requirements
   # - serverless-dotenv-plugin

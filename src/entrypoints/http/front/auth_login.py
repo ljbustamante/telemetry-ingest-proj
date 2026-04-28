@@ -24,16 +24,16 @@ def _verify(pwd: str, hashed: str | None) -> bool:
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, _pp, _q, body_str = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "POST":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
 
     body = json_body(body_str) or {}
     email = str(body.get("email", "")).strip().lower()
     pwd = str(body.get("password", ""))
 
     if not email or not pwd:
-        return error_detail(422, "email y password requeridos")
+        return error_detail(422, "email y password requeridos", event=event)
 
     conn = None
     try:
@@ -45,7 +45,7 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
         row = cur.fetchone()
         if not row or not _verify(pwd, row[3]):
-            return error_detail(401, "Credenciales invalidas")
+            return error_detail(401, "Credenciales invalidas", event=event)
 
         token = make_jwt({"sub": str(row[0]), "email": email, "role": row[2]})
         return response(
@@ -59,10 +59,11 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "role": row[2],
                 },
             },
+            event=event,
         )
     except Exception as e:
         logger.exception("login: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()

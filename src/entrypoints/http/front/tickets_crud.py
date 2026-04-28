@@ -10,7 +10,7 @@ import psycopg2.extras
 
 from ...infrastructure.db.connection import get_connection
 from .common import require_auth
-from .http_utils import error_detail, json_body, parse_event, response
+from .http_utils import cors_headers, error_detail, json_body, parse_event, response
 
 logger = logging.getLogger(__name__)
 
@@ -62,29 +62,31 @@ _LIST_SQL = """
 """
 
 
-def _list_tickets() -> dict[str, Any]:
+def _list_tickets(event: dict[str, Any]) -> dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(_LIST_SQL)
         rows = [dict(r) for r in cur.fetchall()]
-        return response(200, rows)
+        return response(200, rows, event=event)
     finally:
         conn.close()
 
 
-def _close_ticket(ticket_id: str | None, body: dict[str, Any]) -> dict[str, Any]:
+def _close_ticket(
+    event: dict[str, Any], ticket_id: str | None, body: dict[str, Any]
+) -> dict[str, Any]:
     if not ticket_id:
-        return error_detail(400, "ticket_id requerido")
+        return error_detail(400, "ticket_id requerido", event=event)
 
     outcome = body.get("outcome")
     failure_type = body.get("failure_type")
     notes = body.get("notes", "")
 
     if outcome not in VALID_OUTCOMES:
-        return error_detail(422, f"outcome debe ser: {VALID_OUTCOMES}")
+        return error_detail(422, f"outcome debe ser: {VALID_OUTCOMES}", event=event)
     if failure_type and failure_type not in VALID_FAILURE_TYPES:
-        return error_detail(422, f"failure_type debe ser: {VALID_FAILURE_TYPES}")
+        return error_detail(422, f"failure_type debe ser: {VALID_FAILURE_TYPES}", event=event)
 
     fb_notes = failure_type if failure_type else (notes or "")
 
@@ -116,18 +118,20 @@ def _close_ticket(ticket_id: str | None, body: dict[str, Any]) -> dict[str, Any]
             )
         conn.commit()
         closed_at = datetime.now(timezone.utc).isoformat()
-        return response(200, {"id": ticket_id, "outcome": outcome, "closed_at": closed_at})
+        return response(
+            200, {"id": ticket_id, "outcome": outcome, "closed_at": closed_at}, event=event
+        )
     except Exception as e:
         conn.rollback()
         logger.exception("close_ticket: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         conn.close()
 
 
-def _delete_ticket(ticket_id: str | None) -> dict[str, Any]:
+def _delete_ticket(event: dict[str, Any], ticket_id: str | None) -> dict[str, Any]:
     if not ticket_id:
-        return error_detail(400, "ticket_id requerido")
+        return error_detail(400, "ticket_id requerido", event=event)
 
     conn = get_connection()
     try:
@@ -137,24 +141,21 @@ def _delete_ticket(ticket_id: str | None) -> dict[str, Any]:
             return error_detail(
                 409,
                 "No se puede eliminar un ticket cerrado — es Ground Truth del modelo ML",
+                event=event,
             )
         cur.execute("DELETE FROM incidents WHERE id = %s", (ticket_id,))
         if cur.rowcount == 0:
-            return error_detail(404, "Ticket no encontrado")
+            return error_detail(404, "Ticket no encontrado", event=event)
         conn.commit()
         return {
             "statusCode": 204,
-            "headers": {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,Authorization",
-                "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
-            },
+            "headers": {**cors_headers(event)},
             "body": "",
         }
     except Exception as e:
         conn.rollback()
         logger.exception("delete_ticket: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         conn.close()
 
@@ -162,7 +163,7 @@ def _delete_ticket(ticket_id: str | None) -> dict[str, Any]:
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, raw_path, params, _q, body_str = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
 
     bad = require_auth(event)
     if bad:
@@ -174,13 +175,13 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     try:
         if method == "GET" and path.endswith("/tickets") and "export" not in path:
-            return _list_tickets()
+            return _list_tickets(event)
         if method == "PATCH" and "/close" in path:
             body = json_body(body_str) or {}
-            return _close_ticket(ticket_id, body)
+            return _close_ticket(event, ticket_id, body)
         if method == "DELETE" and ticket_id and "/tickets/" in path:
-            return _delete_ticket(ticket_id)
-        return error_detail(405, "Metodo no permitido")
+            return _delete_ticket(event, ticket_id)
+        return error_detail(405, "Metodo no permitido", event=event)
     except Exception as e:
         logger.exception("tickets_crud: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)

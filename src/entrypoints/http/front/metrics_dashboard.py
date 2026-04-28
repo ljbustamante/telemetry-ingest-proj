@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, _pp, _q, _body = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "GET":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
     bad = require_auth(event)
     if bad:
         return bad
@@ -86,10 +86,11 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "active_alerts": alerts,
                 "new_today": new_today,
             },
+            event=event,
         )
     except Exception as e:
         logger.exception("dashboard_summary: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()

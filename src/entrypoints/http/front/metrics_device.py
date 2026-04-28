@@ -17,16 +17,16 @@ logger = logging.getLogger(__name__)
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, path_params, query, _body = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "GET":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
     bad = require_auth(event)
     if bad:
         return bad
 
     device_id = (path_params or {}).get("device_id")
     if not device_id:
-        return error_detail(400, "device_id requerido")
+        return error_detail(400, "device_id requerido", event=event)
 
     hours = int((query or {}).get("hours", 24))
     hours = min(max(hours, 1), 168)
@@ -54,10 +54,10 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
             (device_id, str(hours)),
         )
         rows = [dict(r) for r in cur.fetchall()]
-        return response(200, rows)
+        return response(200, rows, event=event)
     except Exception as e:
         logger.exception("device_metrics: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()

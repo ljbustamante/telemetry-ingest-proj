@@ -15,7 +15,7 @@ import psycopg2.extras
 
 from ...infrastructure.db.connection import get_connection
 from .common import require_auth
-from .http_utils import error_detail, parse_event
+from .http_utils import cors_headers, error_detail, parse_event, response
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,9 @@ _S3_KEY = "tickets/tickets_history.csv"
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, _pp, _q, _body = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "GET":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
     bad = require_auth(event)
     if bad:
         return bad
@@ -60,7 +60,7 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         rows = cur.fetchall()
     except Exception as e:
         logger.exception("export_tickets_csv query: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()
@@ -105,8 +105,8 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return {
             "statusCode": 500,
             "headers": {
+                **cors_headers(event),
                 "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
             },
             "body": json.dumps({"detail": "Error interno"}),
         }
@@ -115,11 +115,9 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     return {
         "statusCode": 200,
         "headers": {
+            **cors_headers(event),
             "Content-Type": "text/csv",
             "Content-Disposition": f"attachment; filename={fname}",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
         },
         "body": csv_text,
         "isBase64Encoded": False,

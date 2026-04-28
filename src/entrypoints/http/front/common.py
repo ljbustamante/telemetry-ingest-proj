@@ -17,5 +17,5 @@ def require_auth(event: dict[str, Any]) -> dict[str, Any] | None:
     """Return None if OK; otherwise a Lambda response dict (401)."""
     claims = bearer_claims(lower_headers(event))
     if not claims or not claims.get("sub"):
-        return error_detail(401, "No autorizado")
+        return error_detail(401, "No autorizado", event=event)
     return None

@@ -31,16 +31,16 @@ def _map_risk_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     method, _path, path_params, _q, _body = parse_event(event)
     if method == "OPTIONS":
-        return response(200, {})
+        return response(200, {}, event=event)
     if method != "GET":
-        return error_detail(405, "Metodo no permitido")
+        return error_detail(405, "Metodo no permitido", event=event)
     bad = require_auth(event)
     if bad:
         return bad
 
     device_id = (path_params or {}).get("device_id")
     if not device_id:
-        return error_detail(400, "device_id requerido")
+        return error_detail(400, "device_id requerido", event=event)
 
     conn = None
     try:
@@ -64,7 +64,7 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
         device = cur.fetchone()
         if not device:
-            return error_detail(404, "Equipo no encontrado")
+            return error_detail(404, "Equipo no encontrado", event=event)
 
         cur.execute(
             """
@@ -95,10 +95,11 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "hardware": dict(hardware) if hardware else None,
                 "active_prediction": dict(prediction) if prediction else None,
             },
+            event=event,
         )
     except Exception as e:
         logger.exception("get_device: %s", e)
-        return error_detail(500, "Error interno")
+        return error_detail(500, "Error interno", event=event)
     finally:
         if conn is not None:
             conn.close()
