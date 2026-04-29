@@ -13,7 +13,7 @@ from typing import Any
 import boto3
 import psycopg2.extras
 
-from ...infrastructure.db.connection import get_connection
+from ....infrastructure.db.connection import get_connection
 from .common import require_auth
 from .http_utils import cors_headers, error_detail, parse_event, response
 

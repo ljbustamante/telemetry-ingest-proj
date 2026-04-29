@@ -8,7 +8,7 @@ from typing import Any
 
 import psycopg2.extras
 
-from ...infrastructure.db.connection import get_connection
+from ....infrastructure.db.connection import get_connection
 from .common import require_auth
 from .http_utils import error_detail, parse_event, response
 

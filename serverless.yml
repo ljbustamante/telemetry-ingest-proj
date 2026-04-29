@@ -38,6 +38,27 @@ provider:
     # Default * = no credentials with cross-origin. For local Vite + credentials use e.g.:
     # CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
     CORS_ALLOWED_ORIGINS: ${env:CORS_ALLOWED_ORIGINS, '*'}
+  # CORS a nivel de HTTP API: OPTIONS (preflight) sin ruta explícita y cabeceras en respuestas.
+  # AWS ignora las cabeceras CORS que devuelva la Lambda cuando aplica esta config (sin duplicar).
+  # Mantén CORS en código para local/tests y para alinear Allow-Headers con el front.
+  httpApi:
+    cors:
+      allowedOrigins:
+        - '*'
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - Accept
+        - Origin
+        - X-Requested-With
+        - X-Internal-Key
+      allowedMethods:
+        - GET
+        - POST
+        - PATCH
+        - DELETE
+        - OPTIONS
+      maxAge: 300
   iamRoleStatements:
     - Effect: Allow
       Action: [sqs:SendMessage]
@@ -162,6 +183,13 @@ functions:
     events:
       - httpApi: { method: GET, path: /dashboard/summary }
       - httpApi: { method: OPTIONS, path: /dashboard/summary }
+  frontDashboardAlertTrend:
+    name: ${self:custom.frontLambdaNamePrefix}dashboard-alert-trend
+    handler: src/entrypoints/http/front/dashboard_alert_trend.handle
+    timeout: 29
+    events:
+      - httpApi: { method: GET, path: /dashboard/alert-trend }
+      - httpApi: { method: OPTIONS, path: /dashboard/alert-trend }
   frontAlertsList:
     name: ${self:custom.frontLambdaNamePrefix}alerts-list
     handler: src/entrypoints/http/front/alerts_list.handle

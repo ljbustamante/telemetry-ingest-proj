@@ -2,4 +2,5 @@
 [tool.pytest.ini_options]
 addopts = "-q --cov=src --cov-report=term-missing"
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." permite `import src...` (handlers y tests) y `....infrastructure` desde `src.entrypoints.http.front`.
+pythonpath = [".", "src"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .http_utils import error_detail, parse_event
+from .http_utils import error_detail
 from .jwt_auth import bearer_claims
 
 

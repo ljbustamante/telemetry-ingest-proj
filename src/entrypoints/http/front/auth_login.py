@@ -9,7 +9,7 @@ from typing import Any
 
 import psycopg2
 
-from ...infrastructure.db.connection import get_connection
+from ....infrastructure.db.connection import get_connection
 from .http_utils import error_detail, json_body, parse_event, response
 from .jwt_auth import make_jwt
 
@@ -44,7 +44,11 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
             (email,),
         )
         row = cur.fetchone()
-        if not row or not _verify(pwd, row[3]):
+        if not row:
+            print("Credenciales invalidas - No se encontró el usuario")
+            return error_detail(401, "Credenciales invalidas", event=event)
+        if not _verify(pwd, row[3]):
+            print("Credenciales invalidas - Contraseña incorrecta")
             return error_detail(401, "Credenciales invalidas", event=event)
 
         token = make_jwt({"sub": str(row[0]), "email": email, "role": row[2]})
