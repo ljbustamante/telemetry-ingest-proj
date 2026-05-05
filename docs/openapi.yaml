@@ -1,0 +1,693 @@
+openapi: 3.0.3
+info:
+  title: CNAgent Telemetry & Dashboard HTTP API
+  description: |
+    Contratos alineados con [serverless.yml](../serverless.yml) y [GUIA_LAMBDAS_AWS.txt](GUIA_LAMBDAS_AWS.txt).
+
+    **Base URL:** sustituye el host por el de tu API Gateway HTTP API (stage `$default` suele no aparecer en la ruta).
+
+    **CORS:** las rutas del dashboard responden a `OPTIONS` con 200 y cabeceras CORS; no están listadas aquí para evitar ruido en Swagger UI.
+
+    **Errores del dashboard:** cuerpo JSON `{"detail": "<mensaje>"}` salvo ingest interno que usa `error` / `details`.
+  version: "1.0.0"
+
+servers:
+  - url: "https://{apiId}.execute-api.{region}.amazonaws.com"
+    description: API Gateway HTTP API (ajusta variables)
+    variables:
+      apiId:
+        default: your-http-api-id
+      region:
+        default: eu-west-1
+
+tags:
+  - name: Ingest
+    description: Ingesta de telemetría (agente)
+  - name: Health
+  - name: InternalOps
+    description: ETL curation y job ML (cabecera `X-Internal-Key`)
+  - name: FrontAuth
+  - name: FrontDevices
+  - name: FrontMetrics
+  - name: FrontAlertsTickets
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /telemetry:
+    post:
+      tags: [Ingest]
+      summary: Ingestar snapshot o payload normalizado
+      description: |
+        Acepta el modelo `TelemetryIngest` o un snapshot completo del agente (normalizado en servidor).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryIngestFlexible"
+      responses:
+        "202":
+          description: Aceptado (encolado SQS)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: accepted
+        "400":
+          description: Payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestError"
+
+  /internal/curation/run:
+    get:
+      tags: [InternalOps]
+      summary: Ping servicio curation ETL
+      description: No exige cabecera interna (solo comprobación de ruta).
+      security: []
+      responses:
+        "200":
+          description: Servicio vivo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalPing"
+    post:
+      tags: [InternalOps]
+      summary: Ejecutar batch de curación
+      security:
+        - internalApiKey: []
+      responses:
+        "200":
+          description: Estadísticas del batch (forma depende del ETL)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          description: Clave incorrecta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalError"
+        "503":
+          description: CURATION_HTTP_SECRET no configurado en el entorno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalError"
+
+  /internal/ml-risk/run:
+    get:
+      tags: [InternalOps]
+      summary: Ping job ML riesgo
+      description: No exige cabecera interna.
+      security: []
+      responses:
+        "200":
+          description: Servicio vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  service:
+                    type: string
+                    example: ml-risk-job
+    post:
+      tags: [InternalOps]
+      summary: Ejecutar job ML riesgo de dispositivos
+      security:
+        - internalApiKey: []
+      responses:
+        "200":
+          description: Estadísticas del job
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          description: Clave interna incorrecta o ausente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalError"
+        "503":
+          description: ML_HTTP_SECRET no configurado en el entorno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalError"
+
+  /auth/login:
+    post:
+      tags: [FrontAuth]
+      summary: Login y JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Token y usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "422":
+          description: email y password requeridos u otro error de validación
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "500":
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  /devices:
+    get:
+      tags: [FrontDevices]
+      summary: Listar dispositivos (no RETIRED)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Array de dispositivos con última lectura curated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceListRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  "/devices/{device_id}":
+    get:
+      tags: [FrontDevices]
+      summary: Detalle dispositivo + hardware + predicción ML
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/deviceId"
+      responses:
+        "200":
+          description: Dispositivo encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Equipo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  "/devices/{device_id}/metrics":
+    get:
+      tags: [FrontMetrics]
+      summary: Métricas agregadas por hora
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/deviceId"
+        - name: hours
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 168
+            default: 24
+          description: Ventana hacia atrás en horas
+      responses:
+        "200":
+          description: Serie temporal por hora
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceMetricBucket"
+        "400":
+          description: device_id requerido u otro error de petición
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /dashboard/summary:
+    get:
+      tags: [FrontMetrics]
+      summary: Resumen dashboard (conteos riesgo, alertas, altas)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Conteos agregados para el dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /dashboard/alert-trend:
+    get:
+      tags: [FrontMetrics]
+      summary: Serie 6h CPU/temp/batería (ACTIVE)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+          description: Ventana en días hacia atrás desde ahora
+      responses:
+        "200":
+          description: Puntos de serie por ventana de 6 horas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AlertTrendPoint"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /alerts:
+    get:
+      tags: [FrontAlertsTickets]
+      summary: Alertas ML recientes (24h)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Lista de predicciones / alertas recientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AlertRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /tickets:
+    get:
+      tags: [FrontAlertsTickets]
+      summary: Listar tickets / incidencias
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Lista de incidencias
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TicketRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  "/tickets/{ticket_id}/close":
+    patch:
+      tags: [FrontAlertsTickets]
+      summary: Cerrar ticket con outcome (Ground Truth)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ticketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseTicketRequest"
+      responses:
+        "200":
+          description: Ticket cerrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  outcome:
+                    type: string
+                    enum: [confirmed_failure, false_positive]
+                  closed_at:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: outcome o failure_type inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  "/tickets/{ticket_id}":
+    delete:
+      tags: [FrontAlertsTickets]
+      summary: Eliminar ticket abierto (no borrar si hay ml_feedback)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ticketId"
+      responses:
+        "204":
+          description: Eliminado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Ticket no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "409":
+          description: Ticket cerrado con feedback — no eliminable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  /tickets/export:
+    get:
+      tags: [FrontAlertsTickets]
+      summary: Exportar CSV de tickets cerrados con outcome
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: CSV adjunto
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Error al generar CSV o subir a S3
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Cabecera HTTP Authorization con esquema Bearer y el JWT devuelto por POST /auth/login.
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Key
+      description: >-
+        Debe coincidir con la variable de entorno CURATION_HTTP_SECRET o ML_HTTP_SECRET según la ruta invocada.
+
+  parameters:
+    deviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ticketId:
+      name: ticket_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Sin JWT válido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+          example:
+            detail: No autorizado
+
+  schemas:
+    DetailError:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    InternalError:
+      type: object
+      properties:
+        error:
+          type: string
+
+    InternalPing:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+          example: curation-etl
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            name:
+              type: string
+            role:
+              type: string
+
+    DeviceListRow:
+      type: object
+      additionalProperties: true
+      description: Fila device + join customer/site/lectura; `risk_bucket` expuesto como HIGH/MEDIUM/LOW
+
+    DeviceDetail:
+      type: object
+      additionalProperties: true
+      properties:
+        hardware:
+          nullable: true
+          type: object
+          additionalProperties: true
+        active_prediction:
+          nullable: true
+          type: object
+          additionalProperties: true
+
+    DeviceMetricBucket:
+      type: object
+      properties:
+        event_ts:
+          type: string
+          format: date-time
+        cpu_pct:
+          type: number
+          nullable: true
+        cpu_temp_c:
+          type: number
+          nullable: true
+        cpu_temp_c_max:
+          type: number
+          nullable: true
+        mem_used_pct:
+          type: number
+          nullable: true
+        battery_charge_pct:
+          type: number
+          nullable: true
+        risk_score:
+          type: number
+          nullable: true
+
+    DashboardSummary:
+      type: object
+      properties:
+        total_devices:
+          type: integer
+        high_risk_devices:
+          type: integer
+        medium_risk_devices:
+          type: integer
+        low_risk_devices:
+          type: integer
+        active_alerts:
+          type: integer
+        new_today:
+          type: integer
+
+    AlertTrendPoint:
+      type: object
+      required: [hour, cpu_pct, temp_c, battery]
+      properties:
+        hour:
+          type: string
+          description: Etiqueta relativa al inicio de ventana, p. ej. `0d 6h`
+          example: "0d 6h"
+        cpu_pct:
+          type: number
+        temp_c:
+          type: number
+        battery:
+          type: number
+
+    AlertRow:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        device_id:
+          type: string
+        device_key:
+          type: string
+        customer_name:
+          type: string
+        risk_level:
+          type: string
+          description: HIGH, MEDIUM, LOW o etiqueta legacy
+        class_prob:
+          type: number
+          nullable: true
+        eta_minutes:
+          type: integer
+          nullable: true
+        predicted_at:
+          type: string
+          format: date-time
+        features_ref:
+          nullable: true
+
+    TicketRow:
+      type: object
+      additionalProperties: true
+
+    CloseTicketRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [confirmed_failure, false_positive]
+        failure_type:
+          type: string
+          nullable: true
+          description: Opcional; valores permitidos incluyen cpu_thermal, disk_io, disk_filesystem, bsod_disk, battery, other
+        notes:
+          type: string
+          default: ""
+
+    TelemetryIngestFlexible:
+      oneOf:
+        - $ref: "#/components/schemas/TelemetryIngest"
+        - type: object
+          description: Snapshot completo del agente (Identity.CollectedAt, etc.)
+          additionalProperties: true
+
+    TelemetryIngest:
+      type: object
+      required: [device_key, event_ts_ms, payload]
+      properties:
+        device_key:
+          type: string
+        event_ts_ms:
+          type: integer
+          format: int64
+          description: Epoch en milisegundos
+        agent_version:
+          type: string
+          nullable: true
+        schema_version:
+          type: string
+          nullable: true
+        sample_period_s:
+          type: integer
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+
+    IngestError:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items: {}
+          description: Errores de validación Pydantic (si aplica)
