@@ -68,5 +68,28 @@ def http_ingest(event, context):
 
     payload = telemetry.model_dump()
     payload["idemKey"] = _hash_payload(payload)
-    publish_telemetry(payload, telemetry.device_key)
+    # #region agent log
+    import time as _time, os as _os
+    def _dbg(msg, data, hyp):
+        import json as _json
+        entry = _json.dumps({"sessionId":"69d890","timestamp":int(_time.time()*1000),"location":"handlers.py:http_ingest","message":msg,"data":data,"hypothesisId":hyp,"runId":"run1"})
+        try:
+            _p = "/home/ljbustamante/upc/telemetry-ingest-proj/.cursor/debug-69d890.log"
+            _os.makedirs(_os.path.dirname(_p), exist_ok=True)
+            open(_p,"a").write(entry+"\n")
+        except Exception: pass
+        logger.info({"debug_agent": msg, **data})
+    _dbg("http_ingest: before publish_telemetry", {"device_key": telemetry.device_key, "idemKey": payload.get("idemKey")}, "H1")
+    # #endregion
+    try:
+        publish_telemetry(payload, telemetry.device_key)
+        # #region agent log
+        _dbg("http_ingest: publish_telemetry SUCCESS", {"device_key": telemetry.device_key}, "H1")
+        # #endregion
+    except Exception as _pub_exc:
+        # #region agent log
+        _dbg("http_ingest: publish_telemetry FAILED", {"error": str(_pub_exc), "type": type(_pub_exc).__name__}, "H1")
+        # #endregion
+        logger.error({"publish_telemetry_error": str(_pub_exc)})
+        return _http_json(500, {"error": "sqs_publish_failed", "detail": str(_pub_exc)}, event)
     return _http_json(202, {"status": "accepted"}, event)

@@ -45,9 +45,24 @@ def _resolve_sqs_client():
 _sqs = _resolve_sqs_client()
 
 def publish_telemetry(message: dict, message_group_id: str) -> None:
+    # #region agent log
+    import time as _time, os as _os, json as _json2
+    def _dbg2(msg, data, hyp):
+        entry = _json2.dumps({"sessionId":"69d890","timestamp":int(_time.time()*1000),"location":"sqs_publisher.py:publish_telemetry","message":msg,"data":data,"hypothesisId":hyp,"runId":"run1"})
+        try:
+            _p = "/home/ljbustamante/upc/telemetry-ingest-proj/.cursor/debug-69d890.log"
+            _os.makedirs(_os.path.dirname(_p), exist_ok=True)
+            open(_p,"a").write(entry+"\n")
+        except Exception: pass
+        logger.info({"debug_agent": msg, **data})
+    _dbg2("publish_telemetry: called", {"queue_url": Settings.TELEMETRY_QUEUE_URL, "group_id": message_group_id}, "H1-H2")
+    # #endregion
     resp = _sqs.send_message(
         QueueUrl=Settings.TELEMETRY_QUEUE_URL,
         MessageBody=json.dumps(message, separators=(",", ":")),
         MessageGroupId=message_group_id,
     )
+    # #region agent log
+    _dbg2("publish_telemetry: send_message OK", {"MessageId": resp.get("MessageId"), "SequenceNumber": resp.get("SequenceNumber")}, "H1-H2")
+    # #endregion
     logger.debug({"sqs_message_id": resp.get("MessageId")})

@@ -55,6 +55,7 @@ provider:
       allowedMethods:
         - GET
         - POST
+        - PUT
         - PATCH
         - DELETE
         - OPTIONS
