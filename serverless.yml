@@ -73,16 +73,20 @@ provider:
     - Effect: Allow
       Action: [s3:PutObject]
       Resource: "arn:aws:s3:::${env:S3_BUCKET, 'cnagent-ml-data'}/tickets/*"
-  vpc:
-    securityGroupIds:
-      - sg-088776f8785a95a21  # tu security group de lambda (lambda-rds-4)
-    subnetIds:
-      - subnet-0ef7053a7b89886c7  # subnets donde está el RDS
-      - subnet-06f9eebd45c60931a
-      - subnet-08e2e5b6c49522ed2
-      - subnet-0ac67d83feabf42e3
-      - subnet-0a7f09383b0caffec
-      - subnet-04b27fd1a699af324
+# VPC anchor: used by all Lambdas that need RDS access.
+# httpIngest is intentionally excluded — it only calls SQS (public endpoint).
+# Placing httpIngest inside the VPC without a NAT gateway or SQS VPC endpoint
+# causes send_message to hang until the Lambda timeout (10 s).
+x-rds-vpc: &rds_vpc
+  securityGroupIds:
+    - sg-088776f8785a95a21
+  subnetIds:
+    - subnet-0ef7053a7b89886c7
+    - subnet-06f9eebd45c60931a
+    - subnet-08e2e5b6c49522ed2
+    - subnet-0ac67d83feabf42e3
+    - subnet-0a7f09383b0caffec
+    - subnet-04b27fd1a699af324
 plugins:
   # - serverless-python-requirements
   # - serverless-dotenv-plugin
@@ -128,6 +132,7 @@ functions:
     handler: src/entrypoints/sqs/consumer.handle
     timeout: 60
     memorySize: 1024
+    vpc: *rds_vpc
     events:
       - sqs:
           arn: { "Fn::GetAtt": ["TelemetryQueue", "Arn"] }
@@ -135,6 +140,7 @@ functions:
     handler: src/entrypoints/aws/curation_handler.handle
     timeout: 120
     memorySize: 1024
+    vpc: *rds_vpc
     events:
       - schedule: rate(10 minutes)
       - httpApi: { method: POST, path: /internal/curation/run }
@@ -143,6 +149,7 @@ functions:
     handler: src/entrypoints/aws/ml_risk_handler.handle
     timeout: 900
     memorySize: 3008
+    vpc: *rds_vpc
     layers:
       - { Ref: MlDepsLambdaLayer }
     events:
@@ -153,6 +160,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}auth-login
     handler: src/entrypoints/http/front/auth_login.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: POST, path: /auth/login }
       - httpApi: { method: OPTIONS, path: /auth/login }
@@ -160,6 +168,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}devices-list
     handler: src/entrypoints/http/front/devices_list.handle
     timeout: 29
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /devices }
       - httpApi: { method: OPTIONS, path: /devices }
@@ -167,6 +176,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}devices-get
     handler: src/entrypoints/http/front/devices_get.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: '/devices/{device_id}' }
       - httpApi: { method: OPTIONS, path: '/devices/{device_id}' }
@@ -174,6 +184,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}device-metrics
     handler: src/entrypoints/http/front/metrics_device.handle
     timeout: 29
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: '/devices/{device_id}/metrics' }
       - httpApi: { method: OPTIONS, path: '/devices/{device_id}/metrics' }
@@ -181,6 +192,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}dashboard-summary
     handler: src/entrypoints/http/front/metrics_dashboard.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /dashboard/summary }
       - httpApi: { method: OPTIONS, path: /dashboard/summary }
@@ -188,6 +200,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}dashboard-alert-trend
     handler: src/entrypoints/http/front/dashboard_alert_trend.handle
     timeout: 29
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /dashboard/alert-trend }
       - httpApi: { method: OPTIONS, path: /dashboard/alert-trend }
@@ -195,6 +208,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}alerts-list
     handler: src/entrypoints/http/front/alerts_list.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /alerts }
       - httpApi: { method: OPTIONS, path: /alerts }
@@ -202,6 +216,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}tickets-crud
     handler: src/entrypoints/http/front/tickets_crud.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /tickets }
       - httpApi: { method: PATCH, path: '/tickets/{ticket_id}/close' }
@@ -214,6 +229,7 @@ functions:
     handler: src/entrypoints/http/front/tickets_export.handle
     timeout: 60
     memorySize: 512
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET, path: /tickets/export }
       - httpApi: { method: OPTIONS, path: /tickets/export }
@@ -221,6 +237,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}users-crud
     handler: src/entrypoints/http/front/users_crud.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET,    path: /users }
       - httpApi: { method: POST,   path: /users }
@@ -234,6 +251,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}customers-crud
     handler: src/entrypoints/http/front/customers_crud.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET,    path: /customers }
       - httpApi: { method: POST,   path: /customers }
@@ -245,6 +263,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}sites-crud
     handler: src/entrypoints/http/front/sites_crud.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET,    path: '/customers/{customer_id}/sites' }
       - httpApi: { method: POST,   path: '/customers/{customer_id}/sites' }
@@ -256,6 +275,7 @@ functions:
     name: ${self:custom.frontLambdaNamePrefix}device-assignments-crud
     handler: src/entrypoints/http/front/device_assignments_crud.handle
     timeout: 15
+    vpc: *rds_vpc
     events:
       - httpApi: { method: GET,   path: '/sites/{site_id}/device-assignments' }
       - httpApi: { method: POST,  path: '/sites/{site_id}/device-assignments' }
