@@ -216,6 +216,38 @@ functions:
     events:
       - httpApi: { method: GET, path: /tickets/export }
       - httpApi: { method: OPTIONS, path: /tickets/export }
+  frontCustomersCrud:
+    name: ${self:custom.frontLambdaNamePrefix}customers-crud
+    handler: src/entrypoints/http/front/customers_crud.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET,    path: /customers }
+      - httpApi: { method: POST,   path: /customers }
+      - httpApi: { method: PUT,    path: '/customers/{id}' }
+      - httpApi: { method: DELETE, path: '/customers/{id}' }
+      - httpApi: { method: OPTIONS, path: /customers }
+      - httpApi: { method: OPTIONS, path: '/customers/{id}' }
+  frontSitesCrud:
+    name: ${self:custom.frontLambdaNamePrefix}sites-crud
+    handler: src/entrypoints/http/front/sites_crud.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET,    path: '/customers/{customer_id}/sites' }
+      - httpApi: { method: POST,   path: '/customers/{customer_id}/sites' }
+      - httpApi: { method: PUT,    path: '/sites/{id}' }
+      - httpApi: { method: DELETE, path: '/sites/{id}' }
+      - httpApi: { method: OPTIONS, path: '/customers/{customer_id}/sites' }
+      - httpApi: { method: OPTIONS, path: '/sites/{id}' }
+  frontDeviceAssignmentsCrud:
+    name: ${self:custom.frontLambdaNamePrefix}device-assignments-crud
+    handler: src/entrypoints/http/front/device_assignments_crud.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET,   path: '/sites/{site_id}/device-assignments' }
+      - httpApi: { method: POST,  path: '/sites/{site_id}/device-assignments' }
+      - httpApi: { method: PATCH, path: '/device-assignments/{id}/unassign' }
+      - httpApi: { method: OPTIONS, path: '/sites/{site_id}/device-assignments' }
+      - httpApi: { method: OPTIONS, path: '/device-assignments/{id}/unassign' }
 resources:
   Resources:
     TelemetryQueue:
