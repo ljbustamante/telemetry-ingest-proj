@@ -40,7 +40,7 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name, role, password_hash FROM users WHERE email = %s",
+            "SELECT id, name, role, password_hash, active FROM users WHERE email = %s",
             (email,),
         )
         row = cur.fetchone()
@@ -50,6 +50,8 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not _verify(pwd, row[3]):
             print("Credenciales invalidas - Contraseña incorrecta")
             return error_detail(401, "Credenciales invalidas", event=event)
+        if not row[4]:
+            return error_detail(401, "Cuenta desactivada", event=event)
 
         token = make_jwt({"sub": str(row[0]), "email": email, "role": row[2]})
         return response(

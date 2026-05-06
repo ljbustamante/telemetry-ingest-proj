@@ -216,6 +216,19 @@ functions:
     events:
       - httpApi: { method: GET, path: /tickets/export }
       - httpApi: { method: OPTIONS, path: /tickets/export }
+  frontUsersCrud:
+    name: ${self:custom.frontLambdaNamePrefix}users-crud
+    handler: src/entrypoints/http/front/users_crud.handle
+    timeout: 15
+    events:
+      - httpApi: { method: GET,    path: /users }
+      - httpApi: { method: POST,   path: /users }
+      - httpApi: { method: PUT,    path: '/users/{id}' }
+      - httpApi: { method: PATCH,  path: '/users/{id}/active' }
+      - httpApi: { method: DELETE, path: '/users/{id}' }
+      - httpApi: { method: OPTIONS, path: /users }
+      - httpApi: { method: OPTIONS, path: '/users/{id}' }
+      - httpApi: { method: OPTIONS, path: '/users/{id}/active' }
   frontCustomersCrud:
     name: ${self:custom.frontLambdaNamePrefix}customers-crud
     handler: src/entrypoints/http/front/customers_crud.handle

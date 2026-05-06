@@ -36,6 +36,8 @@ tags:
     description: CRUD de ubicaciones por cliente
   - name: FrontAssignments
     description: Asignación y desasignación de equipos a ubicaciones
+  - name: FrontUsers
+    description: CRUD de usuarios (solo superadmin)
 
 paths:
   /health:
@@ -447,6 +449,159 @@ paths:
                 $ref: "#/components/schemas/DetailError"
 
   # -------------------------------------------------------------------------
+  # Users (solo superadmin)
+  # -------------------------------------------------------------------------
+  /users:
+    get:
+      tags: [FrontUsers]
+      summary: Listar usuarios (solo superadmin)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Array de usuarios sin password_hash
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [FrontUsers]
+      summary: Crear usuario (solo superadmin)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRequest"
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email duplicado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "422":
+          description: Campos faltantes, rol inválido o email inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  "/users/{id}":
+    put:
+      tags: [FrontUsers]
+      summary: Actualizar usuario (solo superadmin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/genericId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdateRequest"
+      responses:
+        "200":
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "409":
+          description: Email en uso por otro usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+    delete:
+      tags: [FrontUsers]
+      summary: Eliminar usuario (solo superadmin; no elimina el último superadmin activo)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/genericId"
+      responses:
+        "204":
+          description: Eliminado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+        "409":
+          description: No se puede eliminar el único superadmin activo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  "/users/{id}/active":
+    patch:
+      tags: [FrontUsers]
+      summary: Activar o desactivar usuario (solo superadmin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/genericId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserActiveRequest"
+      responses:
+        "200":
+          description: Usuario con estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailError"
+
+  # -------------------------------------------------------------------------
   # Customers
   # -------------------------------------------------------------------------
   /customers:
@@ -821,6 +976,14 @@ components:
             $ref: "#/components/schemas/DetailError"
           example:
             detail: No autorizado
+    Forbidden:
+      description: Rol insuficiente
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+          example:
+            detail: Acceso restringido a superadmin
 
   schemas:
     DetailError:
@@ -1025,6 +1188,67 @@ components:
         details:
           type: array
           items: {}
+
+    # -----------------------------------------------------------------------
+    # User schemas
+    # -----------------------------------------------------------------------
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [tecnico, analista, admin, superadmin]
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    UserRequest:
+      type: object
+      required: [name, email, role, password]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [tecnico, analista, admin, superadmin]
+        password:
+          type: string
+
+    UserUpdateRequest:
+      type: object
+      description: Enviar solo los campos que cambian. Si password se omite o es vacío no se rota el hash.
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [tecnico, analista, admin, superadmin]
+        password:
+          type: string
+          description: Solo actualiza el hash si se provee un valor no vacío
+
+    UserActiveRequest:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
 
     # -----------------------------------------------------------------------
     # Customer schemas

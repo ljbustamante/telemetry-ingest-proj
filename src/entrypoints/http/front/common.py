@@ -19,3 +19,13 @@ def require_auth(event: dict[str, Any]) -> dict[str, Any] | None:
     if not claims or not claims.get("sub"):
         return error_detail(401, "No autorizado", event=event)
     return None
+
+
+def require_superadmin(event: dict[str, Any]) -> dict[str, Any] | None:
+    """Return None if caller is superadmin; 401 if unauthenticated; 403 otherwise."""
+    claims = bearer_claims(lower_headers(event))
+    if not claims or not claims.get("sub"):
+        return error_detail(401, "No autorizado", event=event)
+    if claims.get("role") != "superadmin":
+        return error_detail(403, "Acceso restringido a superadmin", event=event)
+    return None
