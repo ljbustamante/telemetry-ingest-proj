@@ -73,24 +73,23 @@ provider:
     - Effect: Allow
       Action: [s3:PutObject]
       Resource: "arn:aws:s3:::${env:S3_BUCKET, 'cnagent-ml-data'}/tickets/*"
-# VPC anchor: used by all Lambdas that need RDS access.
-# httpIngest is intentionally excluded — it only calls SQS (public endpoint).
-# Placing httpIngest inside the VPC without a NAT gateway or SQS VPC endpoint
-# causes send_message to hang until the Lambda timeout (10 s).
-x-rds-vpc: &rds_vpc
-  securityGroupIds:
-    - sg-088776f8785a95a21
-  subnetIds:
-    - subnet-0ef7053a7b89886c7
-    - subnet-06f9eebd45c60931a
-    - subnet-08e2e5b6c49522ed2
-    - subnet-0ac67d83feabf42e3
-    - subnet-0a7f09383b0caffec
-    - subnet-04b27fd1a699af324
 plugins:
   # - serverless-python-requirements
   # - serverless-dotenv-plugin
 custom:
+  # VPC anchor: shared by Lambdas that need RDS (functions use vpc: *rds_vpc).
+  # httpIngest stays out of the VPC — SQS without NAT/VPC endpoint would hang.
+  # Anchor lives under custom because Serverless v4 rejects unknown root keys (e.g. x-rds-vpc).
+  rdsVpc: &rds_vpc
+    securityGroupIds:
+      - sg-088776f8785a95a21
+    subnetIds:
+      - subnet-0ef7053a7b89886c7
+      - subnet-06f9eebd45c60931a
+      - subnet-08e2e5b6c49522ed2
+      - subnet-0ac67d83feabf42e3
+      - subnet-0a7f09383b0caffec
+      - subnet-04b27fd1a699af324
   # Physical Lambda name prefix for dashboard APIs (GUIA).
   frontLambdaNamePrefix: ${self:service}-front-${sls:stage}-
   # isLocal: ${strEquals(${sls:stage}, 'local')}

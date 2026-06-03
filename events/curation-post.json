@@ -1,0 +1,14 @@
+{
+    "version": "2.0",
+    "routeKey": "POST /internal/curation/run",
+    "rawPath": "/internal/curation/run",
+    "requestContext": {
+      "http": {
+        "method": "POST",
+        "path": "/internal/curation/run"
+      }
+    },
+    "headers": {
+      "x-internal-key": "TU_SECRETO_IGUAL_QUE_ENV"
+    }
+  }
