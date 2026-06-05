@@ -70,7 +70,8 @@ def _list_tickets(event: dict[str, Any]) -> dict[str, Any]:
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         if device_id:
-            sql = _LIST_SQL.replace(
+            # Escape % in LIKE patterns before passing params (psycopg2 treats %X as placeholders)
+            sql = _LIST_SQL.replace("%", "%%").replace(
                 "ORDER BY i.opened_at DESC",
                 "WHERE i.device_id = %s::uuid ORDER BY i.opened_at DESC",
             )
