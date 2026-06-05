@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict
 
 from ..http.cors import cors_headers
+from ...application.job_failure_notifier import notify_job_failure
 from ...application.ml_risk_job_service import run_ml_risk_job
 
 logger = logging.getLogger("ml-risk-handler")
@@ -40,6 +41,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _invoke(event)
         except Exception as e:
             logger.exception("scheduled ml risk failed: %s", e)
+            notify_job_failure("mlRiskJob", e)
             return _json_response(500, {"error": str(e)}, event)
 
     req = event.get("requestContext", {}).get("http", {})
@@ -64,6 +66,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _invoke(event)
         except Exception as e:
             logger.exception("http ml risk failed: %s", e)
+            notify_job_failure("mlRiskJob", e)
             return _json_response(500, {"error": str(e)}, event)
 
     return _json_response(404, {"error": "not_found"}, event)

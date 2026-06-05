@@ -80,7 +80,7 @@ class PostgresRawWriter:
                         """
                         UPDATE devices
                            SET hostname_hash = COALESCE(%s, hostname_hash),
-                               customer_code  = COALESCE(%s, customer_code)
+                               customer_code  = COALESCE(customer_code, %s)
                          WHERE device_key = %s
                         """,
                         enrich_args,

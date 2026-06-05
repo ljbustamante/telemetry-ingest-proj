@@ -1,9 +1,8 @@
-"""GET /dashboard/alert-trend — serie 6h agregada (devices ACTIVE, readings_curated_parent)."""
+"""GET /dashboard/alert-trend — conteo diario de devices ACTIVE por nivel de riesgo."""
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 import psycopg2.extras
@@ -14,67 +13,41 @@ from .http_utils import error_detail, parse_event, response
 
 logger = logging.getLogger(__name__)
 
-# Defaults cuando un bucket no tiene lecturas (mismo espíritu que el mock del front).
-_DEFAULT_CPU = 55.0
-_DEFAULT_TEMP = 70.0
-_DEFAULT_BATTERY = 65.0
-
 _SQL = """
 WITH bounds AS (
     SELECT
-        (NOW() - (%s::integer * INTERVAL '1 day'))::timestamptz AS start_ts,
-        NOW()::timestamptz AS end_ts
+        (NOW() - (%s::integer * INTERVAL '1 day'))::date AS start_day,
+        NOW()::date AS end_day
 ),
-series AS (
-    SELECT
-        (b.start_ts + (seq * INTERVAL '6 hours'))::timestamptz AS bucket_ts
-    FROM bounds b
-    CROSS JOIN LATERAL generate_series(
-        0,
-        GREATEST(
-            0,
-            CEIL(EXTRACT(EPOCH FROM (b.end_ts - b.start_ts)) / 21600.0)::bigint - 1
-        )
-    ) AS seq
+days AS (
+    SELECT gs.day::date
+    FROM bounds b,
+    LATERAL generate_series(
+        b.start_day::timestamptz,
+        b.end_day::timestamptz,
+        INTERVAL '1 day'
+    ) AS gs(day)
 ),
-agg AS (
-    SELECT
-        b.start_ts
-        + (FLOOR(EXTRACT(EPOCH FROM (r.event_ts - b.start_ts)) / 21600.0) * 21600)
-            * INTERVAL '1 second' AS bucket_ts,
-        AVG(r.cpu_pct) AS cpu_pct,
-        AVG(r.cpu_temp_c) AS temp_c,
-        AVG(r.battery_charge_pct) AS battery
+device_daily AS (
+    SELECT DISTINCT ON (r.device_id, DATE(r.event_ts))
+        DATE(r.event_ts) AS day,
+        r.risk_bucket
     FROM readings_curated_parent r
-    INNER JOIN devices d ON d.id = r.device_id AND d.status = 'ACTIVE'
-    CROSS JOIN bounds b
-    WHERE r.event_ts >= b.start_ts
-      AND r.event_ts <= b.end_ts
-    GROUP BY 1
+    JOIN devices d ON d.id = r.device_id AND d.status = 'ACTIVE'
+    WHERE r.event_ts >= (SELECT start_day::timestamptz FROM bounds)
+      AND r.risk_bucket IS NOT NULL
+    ORDER BY r.device_id, DATE(r.event_ts), r.event_ts DESC
 )
 SELECT
-    b.start_ts,
-    s.bucket_ts,
-    COALESCE(ROUND(a.cpu_pct::numeric, 1), %s)::double precision AS cpu_pct,
-    COALESCE(ROUND(a.temp_c::numeric, 1), %s)::double precision AS temp_c,
-    COALESCE(ROUND(a.battery::numeric, 1), %s)::double precision AS battery
-FROM series s
-CROSS JOIN bounds b
-LEFT JOIN agg a ON a.bucket_ts = s.bucket_ts
-ORDER BY s.bucket_ts ASC
+    days.day,
+    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Alto')  AS high,
+    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Medio') AS medium,
+    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Bajo')  AS low
+FROM days
+LEFT JOIN device_daily dd ON dd.day = days.day
+GROUP BY days.day
+ORDER BY days.day ASC
 """
-
-
-def _hour_label(start_ts: datetime, bucket_ts: datetime) -> str:
-    if start_ts.tzinfo is None:
-        start_ts = start_ts.replace(tzinfo=timezone.utc)
-    if bucket_ts.tzinfo is None:
-        bucket_ts = bucket_ts.replace(tzinfo=timezone.utc)
-    delta = bucket_ts - start_ts
-    hrs = int(delta.total_seconds() // 3600)
-    if hrs < 0:
-        hrs = 0
-    return f"{hrs // 24}d {hrs % 24}h"
 
 
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -98,29 +71,16 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(
-            _SQL,
-            (
-                days,
-                _DEFAULT_CPU,
-                _DEFAULT_TEMP,
-                _DEFAULT_BATTERY,
-            ),
-        )
-        rows = cur.fetchall()
-        out: list[dict[str, Any]] = []
-        for r in rows:
-            d = dict(r)
-            start_ts = d.pop("start_ts")
-            bucket_ts = d.pop("bucket_ts")
-            out.append(
-                {
-                    "hour": _hour_label(start_ts, bucket_ts),
-                    "cpu_pct": float(d["cpu_pct"]),
-                    "temp_c": float(d["temp_c"]),
-                    "battery": float(d["battery"]),
-                }
-            )
+        cur.execute(_SQL, (days,))
+        out = [
+            {
+                "date": dict(r)["day"].strftime("%d %b"),
+                "high": int(dict(r)["high"] or 0),
+                "medium": int(dict(r)["medium"] or 0),
+                "low": int(dict(r)["low"] or 0),
+            }
+            for r in cur.fetchall()
+        ]
         return response(200, out, event=event)
     except Exception as e:
         logger.exception("dashboard_alert_trend: %s", e)

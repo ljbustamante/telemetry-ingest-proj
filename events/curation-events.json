@@ -1,5 +1,5 @@
 {
-    "source": "aws.events",
-    "detail-type": "Scheduled Event",
-    "detail": {}
-  }
+  "source": "aws.events",
+  "detail-type": "Scheduled Event",
+  "detail": {}
+}

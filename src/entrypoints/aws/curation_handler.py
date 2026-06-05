@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict
 
 from ..http.cors import cors_headers
+from ...application.job_failure_notifier import notify_job_failure
 from ...infrastructure.repositories.curation_etl_repository import process_curation_batch
 
 logger = logging.getLogger("curation-handler")
@@ -45,6 +46,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _run_etl(event)
         except Exception as e:
             logger.exception("scheduled curation failed: %s", e)
+            notify_job_failure("curationEtl", e)
             return _json_response(500, {"error": str(e)}, event)
 
     req = event.get("requestContext", {}).get("http", {})
@@ -69,6 +71,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _run_etl(event)
         except Exception as e:
             logger.exception("http curation failed: %s", e)
+            notify_job_failure("curationEtl", e)
             return _json_response(500, {"error": str(e)}, event)
 
     return _json_response(404, {"error": "not_found"}, event)

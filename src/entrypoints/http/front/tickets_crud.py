@@ -63,10 +63,20 @@ _LIST_SQL = """
 
 
 def _list_tickets(event: dict[str, Any]) -> dict[str, Any]:
+    query = event.get("queryStringParameters") or {}
+    device_id = query.get("device_id") or None
+
     conn = get_connection()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(_LIST_SQL)
+        if device_id:
+            sql = _LIST_SQL.replace(
+                "ORDER BY i.opened_at DESC",
+                "WHERE i.device_id = %s::uuid ORDER BY i.opened_at DESC",
+            )
+            cur.execute(sql, (device_id,))
+        else:
+            cur.execute(_LIST_SQL)
         rows = [dict(r) for r in cur.fetchall()]
         return response(200, rows, event=event)
     finally:

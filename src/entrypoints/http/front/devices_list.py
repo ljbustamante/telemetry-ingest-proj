@@ -19,7 +19,7 @@ _SQL = """
         d.device_key,
         d.customer_code,
         d.status,
-        d.last_seen_at,
+        raw.last_seen_at,
         d.first_seen_at,
         d.tags,
         c.name AS customer_name,
@@ -46,6 +46,12 @@ _SQL = """
         WHERE device_id = d.id
         ORDER BY event_ts DESC LIMIT 1
     ) r ON true
+    LEFT JOIN LATERAL (
+        SELECT event_ts AS last_seen_at
+        FROM readings_raw_parent
+        WHERE device_id = d.id
+        ORDER BY event_ts DESC LIMIT 1
+    ) raw ON true
     LEFT JOIN LATERAL (
         SELECT id FROM device_assignments
         WHERE device_id = d.id AND unassigned_at IS NULL

@@ -17,6 +17,18 @@ def _num(v: Any) -> Optional[Decimal]:
         return None
 
 
+def _pct(v: Any) -> Optional[Decimal]:
+    """Parse a percentage value and clamp to [0, 100]."""
+    d = _num(v)
+    if d is None:
+        return None
+    if d < 0:
+        return Decimal("0")
+    if d > 100:
+        return Decimal("100")
+    return d
+
+
 def _int(v: Any) -> Optional[int]:
     if v is None:
         return None
@@ -122,14 +134,14 @@ def map_payload_to_curated_row(
         )
         if safe_get(payload, ["Derived", "HoursSinceLastBoot"]) is not None
         else _num(osb.get("HoursSinceLastBoot")),
-        "cpu_pct": _num(safe_get(payload, ["Telemetry", "Cpu", "Pct"])),
+        "cpu_pct": _pct(safe_get(payload, ["Telemetry", "Cpu", "Pct"])),
         "cpu_temp_c": _num(safe_get(payload, ["Telemetry", "Cpu", "TempC"])),
         "cpu_temp_c_avg": _num(safe_get(payload, ["Telemetry", "Cpu", "TempCAvg"])),
         "cpu_temp_c_max": _num(safe_get(payload, ["Telemetry", "Cpu", "TempCMax"])),
         "cpu_clock_mhz": _num(safe_get(payload, ["Telemetry", "Cpu", "ClockMhz"])),
         "mem_used_mb": _int(safe_get(payload, ["Telemetry", "Memory", "UsedMb"])),
-        "mem_used_pct": _num(safe_get(payload, ["Telemetry", "Memory", "UsedPct"])),
-        "battery_charge_pct": _num(safe_get(payload, ["Telemetry", "Battery", "ChargePct"])),
+        "mem_used_pct": _pct(safe_get(payload, ["Telemetry", "Memory", "UsedPct"])),
+        "battery_charge_pct": _pct(safe_get(payload, ["Telemetry", "Battery", "ChargePct"])),
         "battery_status": _battery_status_text(payload),
         "battery_cycle_count": _int(safe_get(payload, ["Telemetry", "Battery", "CycleCount"])),
         "sec_tpm_present": _bool(sec.get("TpmPresent") or sec.get("tpm_present")),
@@ -144,7 +156,7 @@ def map_payload_to_curated_row(
             or sec.get("virt_enabled")
             or sec.get("VirtEnabled")
         ),
-        "risk_score": _num(safe_get(payload, ["Risk", "RiskScore"])),
+        "risk_score": _pct(safe_get(payload, ["Risk", "RiskScore"])),
         "risk_bucket": safe_get(payload, ["Risk", "RiskBucket"]) or safe_get(payload, ["Risk", "Bucket"]),
         "risk_top_factors": _risk_factors(payload),
         "derived_cpu_temp_to_load": _num(safe_get(payload, ["Derived", "CpuTempToLoadRatio"])),

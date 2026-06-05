@@ -39,7 +39,7 @@ _SQL = """
 
 
 def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    method, _path, _pp, _q, _body = parse_event(event)
+    method, _path, _pp, query, _body = parse_event(event)
     if method == "OPTIONS":
         return response(200, {}, event=event)
     if method != "GET":
@@ -48,11 +48,20 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if bad:
         return bad
 
+    device_id = (query or {}).get("device_id") or None
+
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(_SQL)
+        if device_id:
+            sql = _SQL.replace(
+                "ORDER BY p.class_prob DESC",
+                "AND p.device_id = %s::uuid ORDER BY p.class_prob DESC",
+            )
+            cur.execute(sql, (device_id,))
+        else:
+            cur.execute(_SQL)
         rows = [dict(r) for r in cur.fetchall()]
         return response(200, rows, event=event)
     except Exception as e:
