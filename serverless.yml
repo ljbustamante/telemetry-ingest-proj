@@ -31,6 +31,9 @@ provider:
     ML_RECENT_WINDOW: ${env:ML_RECENT_WINDOW, '50'}
     ML_SKLEARN_N_JOBS: ${env:ML_SKLEARN_N_JOBS, '1'}
     JWT_SECRET: ${env:JWT_SECRET, ''}
+    ALERT_EMAIL_FROM: ${env:ALERT_EMAIL_FROM, ''}
+    ALERT_EMAIL_TO: ${env:ALERT_EMAIL_TO, ''}
+    ALERT_DIGEST_SECRET: ${env:ALERT_DIGEST_SECRET, ''}
     S3_BUCKET: ${env:S3_BUCKET, 'cnagent-ml-data'}
     AUTO_TICKET_THRESHOLD: ${env:AUTO_TICKET_THRESHOLD, '0.72'}
     # Comma-separated allowed Origins; if the request Origin matches, it is echoed and
@@ -73,6 +76,9 @@ provider:
     - Effect: Allow
       Action: [s3:PutObject]
       Resource: "arn:aws:s3:::${env:S3_BUCKET, 'cnagent-ml-data'}/tickets/*"
+    - Effect: Allow
+      Action: [ses:SendEmail, ses:SendRawEmail]
+      Resource: "*"
 plugins:
   # - serverless-python-requirements
   # - serverless-dotenv-plugin
@@ -270,6 +276,15 @@ functions:
       - httpApi: { method: DELETE, path: '/sites/{id}' }
       - httpApi: { method: OPTIONS, path: '/customers/{customer_id}/sites' }
       - httpApi: { method: OPTIONS, path: '/sites/{id}' }
+  alertDigestJob:
+    handler: src/entrypoints/aws/alert_digest_handler.handle
+    timeout: 60
+    memorySize: 512
+    vpc: *rds_vpc
+    events:
+      - schedule: cron(0 8 * * ? *)
+      - httpApi: { method: POST, path: /internal/alert-digest/run }
+      - httpApi: { method: GET,  path: /internal/alert-digest/run }
   frontDeviceAssignmentsCrud:
     name: ${self:custom.frontLambdaNamePrefix}device-assignments-crud
     handler: src/entrypoints/http/front/device_assignments_crud.handle
