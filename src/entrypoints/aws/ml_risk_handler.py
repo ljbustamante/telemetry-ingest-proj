@@ -29,8 +29,8 @@ def _headers(event: Dict[str, Any]) -> Dict[str, str]:
     return {str(k).lower(): v for k, v in raw.items() if v is not None}
 
 
-def _invoke(event: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    stats = run_ml_risk_job()
+def _invoke(event: Dict[str, Any] | None = None, trigger_source: str = "schedule") -> Dict[str, Any]:
+    stats = run_ml_risk_job(trigger_source=trigger_source)
     logger.info("ml_risk_job_done %s", stats)
     return _json_response(200, stats, event)
 
@@ -38,7 +38,7 @@ def _invoke(event: Dict[str, Any] | None = None) -> Dict[str, Any]:
 def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if event.get("source") == "aws.events":
         try:
-            return _invoke(event)
+            return _invoke(event, trigger_source="schedule")
         except Exception as e:
             logger.exception("scheduled ml risk failed: %s", e)
             notify_job_failure("mlRiskJob", e)
@@ -63,7 +63,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         ):
             return _json_response(403, {"error": "forbidden"}, event)
         try:
-            return _invoke(event)
+            return _invoke(event, trigger_source="http")
         except Exception as e:
             logger.exception("http ml risk failed: %s", e)
             notify_job_failure("mlRiskJob", e)

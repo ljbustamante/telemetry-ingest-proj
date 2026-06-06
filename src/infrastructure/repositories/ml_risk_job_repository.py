@@ -88,6 +88,80 @@ def has_open_ml_auto_incident(conn: Any, device_uuid: str) -> bool:
     return cur.fetchone() is not None
 
 
+def _create_job_run(trigger_source: str, config: Dict[str, Any]) -> int:
+    """Inserta una fila en ml_job_runs con status='running' y retorna su id.
+    Usa una conexión separada con autocommit para que el registro persista
+    incluso si el job falla y hace rollback de la transacción principal."""
+    conn = get_connection()
+    try:
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO ml_job_runs (status, trigger_source, config)
+            VALUES ('running', %s, %s::jsonb)
+            RETURNING id
+            """,
+            (trigger_source, json.dumps(config)),
+        )
+        return int(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _finish_job_run(job_run_id: int, stats: Dict[str, Any]) -> None:
+    conn = get_connection()
+    try:
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE ml_job_runs SET
+                status               = 'completed',
+                completed_at         = now(),
+                devices_processed    = %s,
+                predictions_inserted = %s,
+                incidents_inserted   = %s,
+                devices_deactivated  = %s,
+                skipped_no_rows      = %s,
+                errors               = %s::jsonb
+            WHERE id = %s
+            """,
+            (
+                stats.get("devices_processed", 0),
+                stats.get("predictions_inserted", 0),
+                stats.get("incidents_inserted", 0),
+                stats.get("devices_deactivated", 0),
+                stats.get("skipped_no_rows", 0),
+                json.dumps(stats.get("errors", []), default=str),
+                job_run_id,
+            ),
+        )
+    finally:
+        conn.close()
+
+
+def _fail_job_run(job_run_id: int, error: Exception) -> None:
+    conn = get_connection()
+    try:
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE ml_job_runs SET
+                status        = 'failed',
+                completed_at  = now(),
+                error_summary = %s
+            WHERE id = %s
+            """,
+            (str(error), job_run_id),
+        )
+    except Exception:
+        logger.exception("Could not mark job_run %d as failed", job_run_id)
+    finally:
+        conn.close()
+
+
 def insert_ml_prediction(
     cur: Any,
     *,
@@ -98,6 +172,7 @@ def insert_ml_prediction(
     model_version: str,
     horizon_minutes: Optional[int],
     feature_ts: Optional[datetime],
+    job_run_id: Optional[int] = None,
 ) -> int:
     predicted_at = datetime.now(timezone.utc)
     class_prob = _round_prob(float(summary.get("predicted_failure_risk") or 0.0))
@@ -112,9 +187,10 @@ def insert_ml_prediction(
         """
         INSERT INTO ml_predictions (
           model_name, model_version, predicted_at, device_id, site_id,
-          horizon_minutes, class_label, class_prob, eta_minutes, feature_ts, features_ref
+          horizon_minutes, class_label, class_prob, eta_minutes, feature_ts,
+          features_ref, job_run_id
         ) VALUES (
-          %s, %s, %s, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::jsonb
+          %s, %s, %s, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::jsonb, %s
         )
         RETURNING id
         """,
@@ -130,6 +206,7 @@ def insert_ml_prediction(
             None,
             feature_ts,
             json.dumps(ref, default=str),
+            job_run_id,
         ),
     )
     rid = cur.fetchone()
@@ -173,14 +250,25 @@ def insert_ml_auto_incident(
     )
 
 
-def process_ml_risk_job() -> Dict[str, Any]:
+def process_ml_risk_job(trigger_source: str = "schedule") -> Dict[str, Any]:
     lookback = int(os.environ.get("ML_RISK_LOOKBACK_DAYS", "30"))
     max_per = int(os.environ.get("ML_MAX_SNAPSHOTS_PER_DEVICE", "5000"))
     model_name = os.environ.get("ML_MODEL_NAME", "device_risk_if")
     model_version = os.environ.get("ML_MODEL_VERSION", "1")
     horizon = int(os.environ.get("ML_HORIZON_MINUTES", "60"))
 
+    config = {
+        "lookback_days": lookback,
+        "max_snapshots_per_device": max_per,
+        "model_name": model_name,
+        "model_version": model_version,
+        "horizon_minutes": horizon,
+    }
+    job_run_id = _create_job_run(trigger_source, config)
+    logger.info("ml_risk_job started job_run_id=%d trigger=%s", job_run_id, trigger_source)
+
     stats: Dict[str, Any] = {
+        "job_run_id": job_run_id,
         "devices_processed": 0,
         "predictions_inserted": 0,
         "incidents_inserted": 0,
@@ -222,6 +310,7 @@ def process_ml_risk_job() -> Dict[str, Any]:
                     model_version=model_version,
                     horizon_minutes=horizon,
                     feature_ts=fts,
+                    job_run_id=job_run_id,
                 )
                 stats["predictions_inserted"] += 1
                 stats["devices_processed"] += 1
@@ -250,10 +339,45 @@ def process_ml_risk_job() -> Dict[str, Any]:
                 logger.exception("ml job device=%s: %s", dev_uuid, e)
                 stats["errors"].append({"device_id": dev_uuid, "error": str(e)})
 
+        # Sync device status: devices with readings in the lookback window → ACTIVE,
+        # devices with no readings at all → INACTIVE (they've stopped reporting).
+        found_ids = list(by_dev.keys())
+        if found_ids:
+            cur.execute(
+                """
+                UPDATE devices SET status = 'ACTIVE'
+                WHERE id = ANY(%s::uuid[])
+                  AND status = 'INACTIVE'
+                """,
+                (found_ids,),
+            )
+            reactivated = cur.rowcount
+            if reactivated:
+                logger.info("ml_risk_job: reactivated %d device(s)", reactivated)
+
+        cur.execute(
+            """
+            UPDATE devices SET status = 'INACTIVE'
+            WHERE status = 'ACTIVE'
+              AND id NOT IN (
+                SELECT device_id FROM readings_raw_parent
+                WHERE event_ts >= (now() AT TIME ZONE 'utc') - make_interval(days => %s)
+              )
+            """,
+            (lookback,),
+        )
+        deactivated = cur.rowcount
+        if deactivated:
+            logger.info("ml_risk_job: marked %d device(s) INACTIVE (no readings in %d days)", deactivated, lookback)
+        stats["devices_deactivated"] = deactivated
+
         conn.commit()
+        _finish_job_run(job_run_id, stats)
+        logger.info("ml_risk_job completed job_run_id=%d stats=%s", job_run_id, stats)
         return stats
-    except Exception:
+    except Exception as exc:
         conn.rollback()
+        _fail_job_run(job_run_id, exc)
         raise
     finally:
         conn.close()

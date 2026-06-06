@@ -1,4 +1,4 @@
-"""GET /dashboard/alert-trend — conteo diario de devices ACTIVE por nivel de riesgo."""
+"""GET /dashboard/alert-trend — conteo de devices ACTIVE por nivel de riesgo por ejecución de mlRiskJob."""
 
 from __future__ import annotations
 
@@ -14,39 +14,18 @@ from .http_utils import error_detail, parse_event, response
 logger = logging.getLogger(__name__)
 
 _SQL = """
-WITH bounds AS (
-    SELECT
-        (NOW() - (%s::integer * INTERVAL '1 day'))::date AS start_day,
-        NOW()::date AS end_day
-),
-days AS (
-    SELECT gs.day::date
-    FROM bounds b,
-    LATERAL generate_series(
-        b.start_day::timestamptz,
-        b.end_day::timestamptz,
-        INTERVAL '1 day'
-    ) AS gs(day)
-),
-device_daily AS (
-    SELECT DISTINCT ON (r.device_id, DATE(r.event_ts))
-        DATE(r.event_ts) AS day,
-        r.risk_bucket
-    FROM readings_curated_parent r
-    JOIN devices d ON d.id = r.device_id AND d.status = 'ACTIVE'
-    WHERE r.event_ts >= (SELECT start_day::timestamptz FROM bounds)
-      AND r.risk_bucket IS NOT NULL
-    ORDER BY r.device_id, DATE(r.event_ts), r.event_ts DESC
-)
 SELECT
-    days.day,
-    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Alto')  AS high,
-    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Medio') AS medium,
-    COUNT(dd.*) FILTER (WHERE dd.risk_bucket = 'Bajo')  AS low
-FROM days
-LEFT JOIN device_daily dd ON dd.day = days.day
-GROUP BY days.day
-ORDER BY days.day ASC
+    jr.started_at                                                          AS run_ts,
+    COUNT(*) FILTER (WHERE p.class_label IN ('Alto',  'HIGH'))            AS high,
+    COUNT(*) FILTER (WHERE p.class_label IN ('Medio', 'MEDIUM'))          AS medium,
+    COUNT(*) FILTER (WHERE p.class_label IN ('Bajo',  'LOW'))             AS low
+FROM ml_job_runs jr
+JOIN ml_predictions p  ON p.job_run_id = jr.id
+JOIN devices d         ON d.id = p.device_id AND d.status = 'ACTIVE'
+WHERE jr.status      = 'completed'
+  AND jr.started_at >= NOW() - (%s * INTERVAL '1 day')
+GROUP BY jr.id, jr.started_at
+ORDER BY jr.started_at ASC
 """
 
 
@@ -74,10 +53,10 @@ def handle(event: dict[str, Any], context: Any) -> dict[str, Any]:
         cur.execute(_SQL, (days,))
         out = [
             {
-                "date": dict(r)["day"].strftime("%d %b"),
-                "high": int(dict(r)["high"] or 0),
+                "date": dict(r)["run_ts"].strftime("%d %b %H:%M"),
+                "high":   int(dict(r)["high"]   or 0),
                 "medium": int(dict(r)["medium"] or 0),
-                "low": int(dict(r)["low"] or 0),
+                "low":    int(dict(r)["low"]    or 0),
             }
             for r in cur.fetchall()
         ]
