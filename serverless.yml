@@ -112,13 +112,37 @@ custom:
     # Docker chowns the download cache to root; a failed run leaves dirs root-owned and
     # the next deploy fails opening downloadCacheslspyc/requirements.txt on the host.
     useDownloadCache: false
+    # boto3/botocore are provided by the Lambda Python runtime — no need to ship them.
+    noDeploy:
+      - boto3
+      - botocore
+      - s3transfer
+      - jmespath
 package:
   patterns:
     - '!layers/**'
     - '!scripts/**'
     - '!env/**'
+    - '!*.zip'
+    - '!.env'
+    - '!.env.*'
+    - '!.coverage'
+    - '!.cursor/**'
+    - '!.claude/**'
+    - '!.pytest_cache/**'
+    - '!tests/**'
+    - '!docs/**'
+    - '!migrations/**'
+    - '!events/**'
+    - '!features.py'
+    - '!train_model.py'
+    - '!list_db_tables.py'
+    - '!requirements*.txt'
+    - '!*.json'
+    - '!docker-compose.yml'
+    - '!pyproject.toml'
+    - '!README.md'
     - 'src/**'
-    - 'requirements.txt'
 # ML wheels (numpy/scipy/pandas/sklearn) — build with: bash scripts/build_ml_scipy_layer.sh
 # Slimmed in that script to stay under the 250 MiB unzipped limit with the function package.
 layers:

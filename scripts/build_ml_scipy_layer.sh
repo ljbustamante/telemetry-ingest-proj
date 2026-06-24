@@ -22,34 +22,34 @@ rm -rf "${ROOT}/layers/ml-deps/python"
 mkdir -p "${SITE}"
 
 docker run --rm \
-  --user "${UID_GID}" \
+  --user root \
   -v "${REQ}:/var/task/req.txt:ro" \
   -v "${SITE}:/out:z" \
   "${IMAGE}" \
-  /bin/sh -c "python3.13 -m pip install --no-cache-dir -r /var/task/req.txt -t /out"
+  /bin/sh -c "
+    python3.13 -m pip install --no-cache-dir -r /var/task/req.txt -t /out
 
-slim_python_site_packages() {
-  local site="$1"
-  # Match Serverless pythonRequirements "slim" defaults (drop bytecode + metadata).
-  find "${site}" -type f \( -name '*.py[co]' -o -name '*.opt-1.pyc' \) -delete 2>/dev/null || true
-  find "${site}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-  find "${site}" -path '*.dist-info/*' -delete 2>/dev/null || true
-  find "${site}" -type d -empty -delete 2>/dev/null || true
+    # Drop bytecode and metadata.
+    find /out -type f \( -name '*.py[co]' -o -name '*.opt-1.pyc' \) -delete 2>/dev/null || true
+    find /out -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+    find /out -path '*.dist-info/*' -delete 2>/dev/null || true
 
-  # Drop bundled test suites (large, unused at runtime).
-  for top in numpy scipy pandas sklearn; do
-    if [[ -d "${site}/${top}" ]]; then
-      find "${site}/${top}" -type d \( -name tests -o -name test \) -exec rm -rf {} + 2>/dev/null || true
-    fi
-  done
+    # Drop bundled test suites.
+    for top in numpy scipy pandas sklearn; do
+      find /out/\${top} -type d \( -name tests -o -name test \) -exec rm -rf {} + 2>/dev/null || true
+    done
 
-  # Strip debug symbols from native extensions (same idea as Serverless strip: true).
-  if command -v strip >/dev/null 2>&1; then
-    find "${site}" -name '*.so' -print0 | xargs -0 strip 2>/dev/null || true
-  fi
-}
+    # Strip only Python extension modules (.cpython-*.so).
+    # Bundled C libraries in *.libs/ (OpenBLAS, libgfortran, etc.) are already
+    # release builds; re-stripping them corrupts ELF segment alignment and causes
+    # "ELF load command address/offset not page-aligned" at Lambda load time.
+    find /out -name '*.cpython-*.so' -print0 | xargs -0 strip --strip-debug 2>/dev/null || true
 
-slim_python_site_packages "${SITE}"
+    find /out -type d -empty -delete 2>/dev/null || true
+  "
+
+# Fix ownership back to the current user after running as root inside Docker.
+chown -R "${UID_GID}" "${SITE}" 2>/dev/null || true
 
 BYTES="$(du -sb "${ROOT}/layers/ml-deps/python" | awk '{print $1}')"
 echo "ML layer (unzipped) size: ${BYTES} bytes (~$((BYTES / 1024 / 1024)) MiB) under ${ROOT}/layers/ml-deps/python"

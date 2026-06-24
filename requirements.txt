@@ -1,7 +1,7 @@
 # Minimal runtime deps for Lambda (Serverless dockerizes pip from this file).
 # Transitive versions are resolved at build time to keep the deployment small.
+# boto3/botocore are excluded: Lambda Python runtime already provides them.
 aws-lambda-powertools==2.36.0
-boto3==1.35.30
 pydantic==2.9.2
 psycopg2-binary==2.9.12
 python-dotenv==1.2.1
