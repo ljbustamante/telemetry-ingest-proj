@@ -12,3 +12,4 @@ layers/ml-scipy-pandas/python/
 .deps/
 .venv/
 scripts/export_readings/*
+reports/*.html
